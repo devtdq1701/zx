@@ -101,6 +101,15 @@ func (c *Client) Login(ctx context.Context) error {
 		return nil
 	}
 
+	if c.profile.Name != "" {
+		if cached := LoadSessionToken(c.profile.Name); cached != "" {
+			c.authMu.Lock()
+			c.auth = cached
+			c.authMu.Unlock()
+			return nil
+		}
+	}
+
 	params := map[string]string{
 		"username": c.profile.User,
 		"password": c.profile.Password,
@@ -124,7 +133,22 @@ func (c *Client) Login(ctx context.Context) error {
 	c.authMu.Lock()
 	c.auth = token
 	c.authMu.Unlock()
+
+	if c.profile.Name != "" {
+		_ = SaveSessionToken(c.profile.Name, token)
+	}
 	return nil
+}
+
+func isAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "-32602") ||
+		strings.Contains(msg, "Session terminated") ||
+		strings.Contains(msg, "Not authorized") ||
+		strings.Contains(msg, "re-login")
 }
 
 func (c *Client) Call(ctx context.Context, method string, params any, result any) error {
@@ -141,7 +165,21 @@ func (c *Client) Call(ctx context.Context, method string, params any, result any
 		c.authMu.RUnlock()
 	}
 
-	return c.rawCall(ctx, method, params, currentAuth, result)
+	err := c.rawCall(ctx, method, params, currentAuth, result)
+	if err != nil && c.profile.Name != "" && c.profile.User != "" && isAuthError(err) {
+		_ = ClearSessionToken(c.profile.Name)
+		c.authMu.Lock()
+		c.auth = ""
+		c.authMu.Unlock()
+
+		if loginErr := c.Login(ctx); loginErr == nil {
+			c.authMu.RLock()
+			currentAuth = c.auth
+			c.authMu.RUnlock()
+			return c.rawCall(ctx, method, params, currentAuth, result)
+		}
+	}
+	return err
 }
 
 func (c *Client) rawCall(ctx context.Context, method string, params any, auth string, result any) error {

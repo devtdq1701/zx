@@ -1,6 +1,7 @@
 package config
 
 type Profile struct {
+	Name      string `yaml:"-"`
 	URL       string `yaml:"url"`
 	User      string `yaml:"user,omitempty"`
 	Password  string `yaml:"password,omitempty"`

@@ -150,6 +150,7 @@ func (c *Config) GetActiveProfile() (*Profile, string, error) {
 	if !ok {
 		return nil, "", fmt.Errorf("profile '%s' not found", c.ActiveProfile)
 	}
+	p.Name = c.ActiveProfile
 	return &p, c.ActiveProfile, nil
 }
 
@@ -158,5 +159,6 @@ func (c *Config) GetProfile(name string) (*Profile, error) {
 	if !ok {
 		return nil, fmt.Errorf("profile '%s' not found", name)
 	}
+	p.Name = name
 	return &p, nil
 }
