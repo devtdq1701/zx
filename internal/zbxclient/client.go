@@ -7,12 +7,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
 
 	"zx/internal/config"
 )
+
+func normalizeRPCURL(rawURL string) string {
+	rawURL = strings.TrimRight(rawURL, "/")
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL + "/api_jsonrpc.php"
+	}
+	if strings.HasSuffix(u.Path, ".php") {
+		u.Path = path.Dir(u.Path)
+		if u.Path == "/" || u.Path == "." {
+			u.Path = ""
+		}
+	}
+	u.Path = path.Join(u.Path, "api_jsonrpc.php")
+	return u.String()
+}
 
 type Client struct {
 	profile    *config.Profile
@@ -25,11 +43,7 @@ type Client struct {
 }
 
 func NewClient(p *config.Profile, timeout time.Duration) *Client {
-	baseURL := strings.TrimRight(p.URL, "/")
-	rpcURL := baseURL
-	if !strings.HasSuffix(rpcURL, ".php") {
-		rpcURL = baseURL + "/api_jsonrpc.php"
-	}
+	rpcURL := normalizeRPCURL(p.URL)
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
