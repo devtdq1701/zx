@@ -23,6 +23,19 @@ var crudEntities = []string{
 	"macro",
 }
 
+var entityIDKeyMap = map[string]string{
+	"user":          "userid",
+	"usergroup":     "usrgrpid",
+	"template":      "templateid",
+	"templategroup": "groupid",
+	"hostgroup":     "groupid",
+	"item":          "itemid",
+	"proxy":         "proxyid",
+	"maintenance":   "maintenanceid",
+	"problem":       "eventid",
+	"macro":         "macroid",
+}
+
 func registerCRUDRoutes() {
 	for _, entity := range crudEntities {
 		ent := entity
@@ -62,10 +75,9 @@ func registerCRUDRoutes() {
 				}
 
 				tw := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-				// Pick primary key and name/description
-				idKey := ent + "id"
-				if ent == "macro" {
-					idKey = "macroid"
+				idKey := entityIDKeyMap[ent]
+				if idKey == "" {
+					idKey = ent + "id"
 				}
 
 				fmt.Fprintf(tw, "ID\tNAME / IDENTIFIER\tDETAILS\n")
@@ -73,17 +85,28 @@ func registerCRUDRoutes() {
 
 				for _, r := range raw {
 					idVal, _ := r[idKey]
+					if idVal == nil || idVal == "" {
+						for _, k := range []string{"globalmacroid", "hostmacroid", "macroid", "groupid", "usrgrpid", "eventid"} {
+							if v, found := r[k]; found && v != nil && v != "" {
+								idVal = v
+								break
+							}
+						}
+					}
 					nameVal, ok := r["name"]
-					if !ok {
-						nameVal, ok = r["macro"]
-						if !ok {
-							nameVal, _ = r["host"]
+					if !ok || nameVal == "" {
+						for _, k := range []string{"username", "alias", "macro", "host", "description"} {
+							if v, found := r[k]; found && v != "" {
+								nameVal = v
+								break
+							}
 						}
 					}
 
-					// Summary of other fields
 					delete(r, idKey)
 					delete(r, "name")
+					delete(r, "username")
+					delete(r, "alias")
 					delete(r, "macro")
 					delete(r, "host")
 
@@ -111,9 +134,9 @@ func registerCRUDRoutes() {
 					return err
 				}
 
-				idKey := ent + "ids"
-				if ent == "macro" {
-					idKey = "macroids"
+				idKey := entityIDKeyMap[ent] + "s"
+				if idKey == "s" {
+					idKey = ent + "ids"
 				}
 
 				method := ent + ".get"
