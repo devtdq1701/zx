@@ -10,6 +10,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -40,9 +41,13 @@ func (c *Client) DownloadCombinedGraph(
 		Timeout:   60 * time.Second,
 	}
 
-	serverBase := strings.TrimRight(c.profile.URL, "/")
-	if strings.HasSuffix(serverBase, ".php") {
-		serverBase = filepath.Dir(serverBase)
+	u, err := url.Parse(c.profile.URL)
+	if err != nil {
+		return fmt.Errorf("parsing profile URL: %w", err)
+	}
+	serverBase := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+	if dir := path.Dir(u.Path); dir != "/" && dir != "." {
+		serverBase += dir
 	}
 
 	// 1. Login to web frontend if username/password are provided
