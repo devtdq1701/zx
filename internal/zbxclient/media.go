@@ -3,6 +3,7 @@ package zbxclient
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type MediaTypeRecord struct {
@@ -76,4 +77,155 @@ func (c *Client) GetUserMedia(ctx context.Context, usernameOrID string) ([]UserM
 		results = append(results, m)
 	}
 	return results, nil
+}
+
+func (c *Client) CreateTelegramMediaType(ctx context.Context, name, token, parseMode string, dryRun bool) (*MediaTypeRecord, error) {
+	var base []struct {
+		MediaTypeID      string           `json:"mediatypeid"`
+		Parameters       []map[string]any `json:"parameters"`
+		Script           string           `json:"script"`
+		MessageTemplates []any            `json:"message_templates"`
+	}
+	err := c.Call(ctx, "mediatype.get", map[string]any{
+		"filter":                 map[string]string{"name": "Telegram"},
+		"selectParameters":       "extend",
+		"selectMessageTemplates": "extend",
+	}, &base)
+	if err != nil || len(base) == 0 {
+		return nil, fmt.Errorf("base Telegram mediatype not found: %w", err)
+	}
+
+	maskedToken := "***"
+	if len(token) > 8 {
+		maskedToken = token[:8] + "***"
+	}
+
+	if dryRun {
+		return &MediaTypeRecord{
+			MediaTypeID: "0",
+			Name:        name,
+			Type:        "4",
+			Status:      "0",
+			Description: fmt.Sprintf("Cloned from Telegram (#%s), token=%s, parse_mode=%s", base[0].MediaTypeID, maskedToken, parseMode),
+		}, nil
+	}
+
+	params := base[0].Parameters
+	for _, p := range params {
+		if p["name"] == "api_token" {
+			p["value"] = token
+		} else if p["name"] == "api_parse_mode" && parseMode != "" {
+			p["value"] = parseMode
+		}
+	}
+
+	var res struct {
+		MediaTypeIDs []string `json:"mediatypeids"`
+	}
+	payload := map[string]any{
+		"name":              name,
+		"type":              4,
+		"status":            0,
+		"script":            base[0].Script,
+		"parameters":        params,
+		"message_templates": base[0].MessageTemplates,
+	}
+	if err := c.Call(ctx, "mediatype.create", payload, &res); err != nil {
+		return nil, fmt.Errorf("creating mediatype: %w", err)
+	}
+	if len(res.MediaTypeIDs) == 0 {
+		return nil, fmt.Errorf("no mediatypeid returned from server")
+	}
+	return &MediaTypeRecord{
+		MediaTypeID: res.MediaTypeIDs[0],
+		Name:        name,
+		Type:        "4",
+		Status:      "0",
+	}, nil
+}
+
+func (c *Client) AddUserMedia(ctx context.Context, usernameOrID, mediatypeNameOrID, sendTo, period string, severity int, enabled, dryRun bool) ([]UserMediaRecord, error) {
+	type rawUser struct {
+		UserID   string           `json:"userid"`
+		Username string           `json:"username"`
+		Medias   []map[string]any `json:"medias"`
+	}
+	var users []rawUser
+	err := c.Call(ctx, "user.get", map[string]any{
+		"filter":       map[string]string{"username": usernameOrID},
+		"selectMedias": "extend",
+		"output":       []string{"userid", "username"},
+	}, &users)
+	if err != nil || len(users) == 0 {
+		_ = c.Call(ctx, "user.get", map[string]any{
+			"userids":      []string{usernameOrID},
+			"selectMedias": "extend",
+			"output":       []string{"userid", "username"},
+		}, &users)
+	}
+	if len(users) == 0 {
+		return nil, fmt.Errorf("user '%s' not found", usernameOrID)
+	}
+
+	types, err := c.GetMediaTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var targetTypeID string
+	var targetTypeName string
+	for _, t := range types {
+		if t.MediaTypeID == mediatypeNameOrID || strings.EqualFold(t.Name, mediatypeNameOrID) {
+			targetTypeID = t.MediaTypeID
+			targetTypeName = t.Name
+			break
+		}
+	}
+	if targetTypeID == "" {
+		return nil, fmt.Errorf("mediatype '%s' not found", mediatypeNameOrID)
+	}
+
+	activeStr := "0"
+	if !enabled {
+		activeStr = "1"
+	}
+	if period == "" {
+		period = "1-7,00:00-24:00"
+	}
+	if severity <= 0 {
+		severity = 63
+	}
+
+	if dryRun {
+		currMedias, _ := c.GetUserMedia(ctx, usernameOrID)
+		currMedias = append(currMedias, UserMediaRecord{
+			MediaID:     "(new)",
+			MediaTypeID: targetTypeID,
+			MediaName:   targetTypeName,
+			SendTo:      sendTo,
+			Active:      activeStr,
+			Period:      period,
+			Severity:    fmt.Sprintf("%d", severity),
+		})
+		return currMedias, nil
+	}
+
+	newMediaMap := map[string]any{
+		"mediatypeid": targetTypeID,
+		"sendto":      sendTo,
+		"period":      period,
+		"severity":    severity,
+		"active":      activeStr,
+	}
+	allMedias := append(users[0].Medias, newMediaMap)
+
+	var res struct {
+		UserIDs []string `json:"userids"`
+	}
+	if err := c.Call(ctx, "user.update", map[string]any{
+		"userid": users[0].UserID,
+		"medias": allMedias,
+	}, &res); err != nil {
+		return nil, fmt.Errorf("user.update failed: %w", err)
+	}
+	return c.GetUserMedia(ctx, usernameOrID)
 }
