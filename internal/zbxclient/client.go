@@ -38,6 +38,7 @@ type Client struct {
 	rpcURL     string
 	auth       string
 	authMu     sync.RWMutex
+	isBearer   bool
 	reqID      int
 	reqIDMu    sync.Mutex
 }
@@ -190,8 +191,8 @@ func (c *Client) rawCall(ctx context.Context, method string, params any, auth st
 		ID:      c.nextID(),
 	}
 
-	// For Zabbix 5.x/legacy auth parameter
-	if auth != "" && c.profile.Token == "" {
+	// Legacy auth parameter in body for Zabbix 5.x
+	if auth != "" && !c.isBearer && c.profile.Token == "" {
 		reqBody.Auth = auth
 	}
 
@@ -206,9 +207,11 @@ func (c *Client) rawCall(ctx context.Context, method string, params any, auth st
 	}
 	req.Header.Set("Content-Type", "application/json-rpc")
 
-	// For Zabbix 6.4/7.0 Bearer token
+	// Set Authorization header for static token or Zabbix 7.0+ bearer mode
 	if c.profile.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.profile.Token)
+	} else if auth != "" && c.isBearer {
+		req.Header.Set("Authorization", "Bearer "+auth)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -227,6 +230,11 @@ func (c *Client) rawCall(ctx context.Context, method string, params any, auth st
 	}
 
 	if rpcResp.Error != nil {
+		// Auto-adapt for Zabbix 7.0+ which disallows "auth" parameter in body
+		if !c.isBearer && auth != "" && strings.Contains(rpcResp.Error.Data, `unexpected parameter "auth"`) {
+			c.isBearer = true
+			return c.rawCall(ctx, method, params, auth, result)
+		}
 		return fmt.Errorf("zabbix api error (%d): %s - %s", rpcResp.Error.Code, rpcResp.Error.Message, rpcResp.Error.Data)
 	}
 
