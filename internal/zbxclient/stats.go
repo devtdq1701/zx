@@ -2,6 +2,7 @@ package zbxclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -13,9 +14,49 @@ import (
 )
 
 type TrendSample struct {
-	Clock    int64   `json:"clock,string"`
-	ValueAvg float64 `json:"value_avg,string"`
-	ValueMax float64 `json:"value_max,string"`
+	Clock    int64   `json:"clock"`
+	ValueAvg float64 `json:"value_avg"`
+	ValueMax float64 `json:"value_max"`
+}
+
+func (s *TrendSample) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Clock    any `json:"clock"`
+		ValueAvg any `json:"value_avg"`
+		ValueMax any `json:"value_max"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	parseFloat := func(v any) float64 {
+		switch val := v.(type) {
+		case float64:
+			return val
+		case string:
+			f, _ := strconv.ParseFloat(val, 64)
+			return f
+		default:
+			return 0
+		}
+	}
+
+	parseInt64 := func(v any) int64 {
+		switch val := v.(type) {
+		case float64:
+			return int64(val)
+		case string:
+			n, _ := strconv.ParseInt(val, 10, 64)
+			return n
+		default:
+			return 0
+		}
+	}
+
+	s.Clock = parseInt64(raw.Clock)
+	s.ValueAvg = parseFloat(raw.ValueAvg)
+	s.ValueMax = parseFloat(raw.ValueMax)
+	return nil
 }
 
 type HostStats struct {
@@ -137,15 +178,16 @@ func (c *Client) ResolveHosts(ctx context.Context, targets []string) ([]HostReco
 		}
 
 		// Otherwise resolve by host name / wildcard search
-		searchParam := map[string]string{"name": target}
-		if strings.Contains(target, "*") {
-			searchParam = map[string]string{"host": strings.ReplaceAll(target, "*", "")}
+		searchParam := map[string]string{
+			"host": target,
+			"name": target,
 		}
 		var hosts []HostRecord
 		err := c.Call(ctx, "host.get", map[string]any{
-			"search":                searchParam,
+			"search":                 searchParam,
 			"searchWildcardsEnabled": true,
-			"output":                []string{"hostid", "host", "name"},
+			"searchByAny":            true,
+			"output":                 []string{"hostid", "host", "name"},
 		}, &hosts)
 		if err == nil {
 			for _, h := range hosts {
@@ -242,25 +284,69 @@ func (c *Client) GetHostStatsSummary(
 				return nil
 			}
 
-			var cpuNumID, memTotID, cpuUtilID, memUtilID, loadID string
-			var cpuNumVal, memTotVal string
-
+			var cpuNumID, cpuNumVal string
 			for _, it := range items {
-				k := it.Key
-				nameLower := strings.ToLower(it.Name)
-
-				if strings.Contains(k, "system.cpu.num") {
+				if strings.Contains(it.Key, "system.cpu.num") {
 					cpuNumID = it.ItemID
 					cpuNumVal = it.LastValue
-				} else if strings.Contains(k, "vm.memory.size[total]") {
+					break
+				}
+			}
+
+			var memTotID, memTotVal string
+			for _, it := range items {
+				if strings.Contains(it.Key, "vm.memory.size[total]") {
 					memTotID = it.ItemID
 					memTotVal = it.LastValue
-				} else if k == "system.cpu.util" || (cpuUtilID == "" && strings.Contains(nameLower, "cpu utilization")) {
+					break
+				}
+			}
+
+			var cpuUtilID string
+			for _, it := range items {
+				if it.Key == "system.cpu.util" {
 					cpuUtilID = it.ItemID
-				} else if k == "vm.memory.utilization" || k == "vm.memory.util" || k == "vm.memory.size[pused]" || (memUtilID == "" && strings.Contains(nameLower, "memory utilization")) {
+					break
+				}
+			}
+			if cpuUtilID == "" {
+				for _, it := range items {
+					if strings.Contains(strings.ToLower(it.Name), "cpu utilization") {
+						cpuUtilID = it.ItemID
+						break
+					}
+				}
+			}
+
+			var memUtilID string
+			for _, it := range items {
+				if it.Key == "vm.memory.utilization" || it.Key == "vm.memory.util" || it.Key == "vm.memory.size[pused]" {
 					memUtilID = it.ItemID
-				} else if k == "system.cpu.load[all,avg15]" || (loadID == "" && strings.Contains(k, "system.cpu.load") && strings.Contains(k, "15")) {
+					break
+				}
+			}
+			if memUtilID == "" {
+				for _, it := range items {
+					if strings.Contains(strings.ToLower(it.Name), "memory utilization") {
+						memUtilID = it.ItemID
+						break
+					}
+				}
+			}
+
+			var loadID string
+			for _, it := range items {
+				if it.Key == "system.cpu.load[all,avg15]" || it.Key == "system.cpu.load[percpu,avg15]" {
 					loadID = it.ItemID
+					break
+				}
+			}
+			if loadID == "" {
+				for _, it := range items {
+					if strings.Contains(it.Key, "system.cpu.load") && strings.Contains(it.Key, "15") {
+						loadID = it.ItemID
+						break
+					}
 				}
 			}
 

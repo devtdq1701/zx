@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -148,6 +150,72 @@ var profileAddCmd = &cobra.Command{
 	},
 }
 
+var profileImportLegacyCmd = &cobra.Command{
+	Use:   "import-legacy",
+	Short: "Import profiles from legacy ~/.config/zabbix-cli/profiles.json",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		legacyPath := filepath.Join(home, ".config", "zabbix-cli", "profiles.json")
+		ldata, err := os.ReadFile(legacyPath)
+		if err != nil {
+			return fmt.Errorf("reading legacy profiles: %w", err)
+		}
+
+		type legacyStore struct {
+			Active   string `json:"active"`
+			Profiles map[string]struct {
+				URL       string `json:"url"`
+				User      string `json:"user"`
+				Username  string `json:"username"`
+				Password  string `json:"password"`
+				Token     string `json:"token"`
+				VerifySSL *bool  `json:"verify_ssl"`
+			} `json:"profiles"`
+		}
+		var leg legacyStore
+		if err := json.Unmarshal(ldata, &leg); err != nil {
+			return fmt.Errorf("parsing legacy profiles: %w", err)
+		}
+
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			cfg = config.DefaultConfig()
+		}
+
+		if leg.Active != "" {
+			cfg.ActiveProfile = leg.Active
+		}
+		count := 0
+		for name, lp := range leg.Profiles {
+			verify := true
+			if lp.VerifySSL != nil {
+				verify = *lp.VerifySSL
+			}
+			u := lp.User
+			if u == "" {
+				u = lp.Username
+			}
+			cfg.Profiles[name] = config.Profile{
+				URL:       lp.URL,
+				User:      u,
+				Password:  lp.Password,
+				Token:     lp.Token,
+				VerifySSL: verify,
+			}
+			count++
+		}
+
+		if err := cfg.Save(); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
+		fmt.Printf("Successfully imported %d profiles from %s\n", count, legacyPath)
+		return nil
+	},
+}
+
 func init() {
 	profileAddCmd.Flags().StringVar(&newProfURL, "url", "", "Zabbix web/API base URL")
 	profileAddCmd.Flags().StringVar(&newProfToken, "token", "", "API token (Zabbix 6.4/7.0)")
@@ -159,6 +227,7 @@ func init() {
 	profileCmd.AddCommand(profileSwitchCmd)
 	profileCmd.AddCommand(profileShowCmd)
 	profileCmd.AddCommand(profileAddCmd)
+	profileCmd.AddCommand(profileImportLegacyCmd)
 
 	rootCmd.AddCommand(profileCmd)
 }

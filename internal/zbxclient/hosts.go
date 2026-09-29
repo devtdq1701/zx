@@ -42,12 +42,12 @@ func (c *Client) GetDetailedHosts(ctx context.Context, target string) ([]Detaile
 	if len(hostIDs) > 0 {
 		params["hostids"] = hostIDs
 	} else if target != "" {
-		if strings.Contains(target, "*") {
-			params["search"] = map[string]string{"host": strings.ReplaceAll(target, "*", "")}
-			params["searchWildcardsEnabled"] = true
-		} else {
-			params["search"] = map[string]string{"name": target}
+		params["search"] = map[string]string{
+			"host": target,
+			"name": target,
 		}
+		params["searchWildcardsEnabled"] = true
+		params["searchByAny"] = true
 	}
 
 	type rawHost struct {

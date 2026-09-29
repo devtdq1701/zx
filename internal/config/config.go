@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -55,6 +56,47 @@ func LoadConfigFrom(path string) (*Config, error) {
 		if os.IsNotExist(err) {
 			cfg := DefaultConfig()
 			cfg.filePath = path
+			// Auto-import from ~/.config/zabbix-cli/profiles.json if present
+			if home, err := os.UserHomeDir(); err == nil {
+				legacyPath := filepath.Join(home, ".config", "zabbix-cli", "profiles.json")
+				if ldata, err := os.ReadFile(legacyPath); err == nil {
+					type legacyStore struct {
+						Active   string `json:"active"`
+						Profiles map[string]struct {
+							URL       string `json:"url"`
+							User      string `json:"user"`
+							Username  string `json:"username"`
+							Password  string `json:"password"`
+							Token     string `json:"token"`
+							VerifySSL *bool  `json:"verify_ssl"`
+						} `json:"profiles"`
+					}
+					var leg legacyStore
+					if err := json.Unmarshal(ldata, &leg); err == nil {
+						if leg.Active != "" {
+							cfg.ActiveProfile = leg.Active
+						}
+						for name, lp := range leg.Profiles {
+							verify := true
+							if lp.VerifySSL != nil {
+								verify = *lp.VerifySSL
+							}
+							u := lp.User
+							if u == "" {
+								u = lp.Username
+							}
+							cfg.Profiles[name] = Profile{
+								URL:       lp.URL,
+								User:      u,
+								Password:  lp.Password,
+								Token:     lp.Token,
+								VerifySSL: verify,
+							}
+						}
+						_ = cfg.Save()
+					}
+				}
+			}
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
