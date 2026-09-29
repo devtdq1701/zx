@@ -216,6 +216,36 @@ var profileImportLegacyCmd = &cobra.Command{
 	},
 }
 
+var profileCurrentCmd = &cobra.Command{
+	Use:   "current",
+	Short: "Print the current active profile/context name",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			return err
+		}
+		if cfg.ActiveProfile == "" {
+			fmt.Println("No active profile set")
+			return nil
+		}
+		fmt.Println(cfg.ActiveProfile)
+		return nil
+	},
+}
+
+var contextCmd = &cobra.Command{
+	Use:     "context",
+	Aliases: []string{"ctx"},
+	Short:   "Manage connection contexts (alias for profile)",
+}
+
+var contextUseCmd = &cobra.Command{
+	Use:   "use [NAME]",
+	Short: "Switch active context",
+	Args:  cobra.ExactArgs(1),
+	RunE:  profileSwitchCmd.RunE,
+}
+
 func init() {
 	profileAddCmd.Flags().StringVar(&newProfURL, "url", "", "Zabbix web/API base URL")
 	profileAddCmd.Flags().StringVar(&newProfToken, "token", "", "API token (Zabbix 6.4/7.0)")
@@ -228,6 +258,12 @@ func init() {
 	profileCmd.AddCommand(profileShowCmd)
 	profileCmd.AddCommand(profileAddCmd)
 	profileCmd.AddCommand(profileImportLegacyCmd)
+	profileCmd.AddCommand(profileCurrentCmd)
+
+	contextCmd.AddCommand(profileListCmd)
+	contextCmd.AddCommand(contextUseCmd)
+	contextCmd.AddCommand(profileCurrentCmd)
 
 	rootCmd.AddCommand(profileCmd)
+	rootCmd.AddCommand(contextCmd)
 }
