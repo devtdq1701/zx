@@ -156,9 +156,10 @@ type HostInterfaceRecord struct {
 	IP     string `json:"ip"`
 }
 
-func (c *Client) ResolveHosts(ctx context.Context, targets []string) ([]HostRecord, map[string]string, error) {
+func (c *Client) resolveTargets(ctx context.Context, targets []string) ([]HostRecord, map[string]string, error) {
 	hostMap := make(map[string]HostRecord)
 	ipMap := make(map[string]string)
+	var firstErr error
 
 	for _, target := range targets {
 		target = strings.TrimSpace(target)
@@ -173,6 +174,9 @@ func (c *Client) ResolveHosts(ctx context.Context, targets []string) ([]HostReco
 				"filter": map[string]string{"ip": target},
 				"output": []string{"hostid", "ip"},
 			}, &ifaces)
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
 			if err == nil && len(ifaces) > 0 {
 				var hostIDs []string
 				for _, iface := range ifaces {
@@ -184,6 +188,9 @@ func (c *Client) ResolveHosts(ctx context.Context, targets []string) ([]HostReco
 					"hostids": hostIDs,
 					"output":  []string{"hostid", "host", "name"},
 				}, &hosts)
+				if err != nil && firstErr == nil {
+					firstErr = err
+				}
 				if err == nil {
 					for _, h := range hosts {
 						hostMap[h.HostID] = h
@@ -205,6 +212,9 @@ func (c *Client) ResolveHosts(ctx context.Context, targets []string) ([]HostReco
 			"searchByAny":            true,
 			"output":                 []string{"hostid", "host", "name"},
 		}, &hosts)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
 		if err == nil {
 			for _, h := range hosts {
 				hostMap[h.HostID] = h
@@ -237,14 +247,120 @@ func (c *Client) ResolveHosts(ctx context.Context, targets []string) ([]HostReco
 		}
 	}
 
+	if len(res) == 0 && firstErr != nil {
+		return nil, nil, firstErr
+	}
+
 	return res, ipMap, nil
+}
+
+func (c *Client) resolveGroupIDs(ctx context.Context, groups []string) ([]string, error) {
+	var ids, names []string
+	for _, g := range groups {
+		g = strings.TrimSpace(g)
+		if g == "" {
+			continue
+		}
+		if _, err := strconv.Atoi(g); err == nil {
+			ids = append(ids, g)
+		} else {
+			names = append(names, g)
+		}
+	}
+	if len(names) > 0 {
+		var found []struct {
+			GroupID string `json:"groupid"`
+			Name    string `json:"name"`
+		}
+		if err := c.Call(ctx, "hostgroup.get", map[string]any{
+			"filter": map[string]any{"name": names},
+			"output": []string{"groupid", "name"},
+		}, &found); err != nil {
+			return nil, fmt.Errorf("hostgroup.get: %w", err)
+		}
+		got := map[string]bool{}
+		for _, f := range found {
+			ids = append(ids, f.GroupID)
+			got[f.Name] = true
+		}
+		for _, n := range names {
+			if !got[n] {
+				return nil, fmt.Errorf("hostgroup not found: %s", n)
+			}
+		}
+	}
+	return ids, nil
+}
+
+// ResolveHostsFiltered resolves targets and/or hostgroups to hosts.
+func (c *Client) ResolveHostsFiltered(ctx context.Context, targets, hostgroups []string) ([]HostRecord, map[string]string, error) {
+	if len(hostgroups) == 0 {
+		return c.resolveTargets(ctx, targets)
+	}
+	groupIDs, err := c.resolveGroupIDs(ctx, hostgroups)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(targets) == 0 {
+		var hosts []HostRecord
+		if err := c.Call(ctx, "host.get", map[string]any{
+			"groupids": groupIDs,
+			"output":   []string{"hostid", "host", "name"},
+		}, &hosts); err != nil {
+			return nil, nil, fmt.Errorf("host.get: %w", err)
+		}
+		ipMap := map[string]string{}
+		if len(hosts) > 0 {
+			var ids []string
+			for _, h := range hosts {
+				ids = append(ids, h.HostID)
+			}
+			var ifaces []HostInterfaceRecord
+			_ = c.Call(ctx, "hostinterface.get", map[string]any{"hostids": ids, "output": []string{"hostid", "ip"}}, &ifaces)
+			for _, iface := range ifaces {
+				if _, ok := ipMap[iface.HostID]; !ok {
+					ipMap[iface.HostID] = iface.IP
+				}
+			}
+		}
+		return hosts, ipMap, nil
+	}
+	hosts, ipMap, err := c.resolveTargets(ctx, targets)
+	if err != nil || len(hosts) == 0 {
+		return hosts, ipMap, err
+	}
+	var ids []string
+	for _, h := range hosts {
+		ids = append(ids, h.HostID)
+	}
+	var inGroup []HostRecord
+	if err := c.Call(ctx, "host.get", map[string]any{
+		"hostids": ids, "groupids": groupIDs, "output": []string{"hostid"},
+	}, &inGroup); err != nil {
+		return nil, nil, fmt.Errorf("host.get: %w", err)
+	}
+	keep := map[string]bool{}
+	for _, h := range inGroup {
+		keep[h.HostID] = true
+	}
+	var out []HostRecord
+	for _, h := range hosts {
+		if keep[h.HostID] {
+			out = append(out, h)
+		}
+	}
+	return out, ipMap, nil
+}
+
+func (c *Client) ResolveHosts(ctx context.Context, targets []string) ([]HostRecord, map[string]string, error) {
+	return c.ResolveHostsFiltered(ctx, targets, nil)
 }
 
 func (c *Client) GetHostStatsSummary(
 	ctx context.Context,
 	q StatsQuery,
 ) ([]HostStats, *ClusterPeak, error) {
-	hosts, ipMap, err := c.ResolveHosts(ctx, q.Targets)
+	hosts, ipMap, err := c.ResolveHostsFiltered(ctx, q.Targets, q.Hostgroups)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolving hosts: %w", err)
 	}
