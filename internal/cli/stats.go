@@ -31,13 +31,18 @@ func statsJSON(stats []zbxclient.HostStats, peak *zbxclient.ClusterPeak, start, 
 	loc *time.Location, f zbxclient.TrendFilter, usePeak bool) map[string]any {
 	hosts := make([]map[string]any, 0, len(stats))
 	for _, s := range stats {
-		hosts = append(hosts, map[string]any{
+		h := map[string]any{
 			"hostid": s.HostID, "host": s.HostName, "ip": s.IP, "cpu_cores": s.CPUCores,
 			"ram_total_gb": s.RAMTotalGB, "cpu_avg": s.CPUAvg, "cpu_max": s.CPUMax,
 			"ram_avg": s.RAMAvg, "ram_max": s.RAMMax, "load_avg": s.LoadAvg, "load_max": s.LoadMax,
 			"error":   s.Error,
 			"missing": append([]string{}, s.Missing...),
-		})
+		}
+		// A missing metric has no value; 0 would read as a real measurement.
+		for _, m := range s.Missing {
+			h[m+"_avg"], h[m+"_max"] = nil, nil
+		}
+		hosts = append(hosts, h)
 	}
 	var cp any
 	if peak != nil {

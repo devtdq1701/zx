@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -582,32 +583,33 @@ func (c *Client) GetHostStatsSummary(
 		return nil, nil, err
 	}
 
-	// Calculate Cluster Peak (hour with highest combined CPU load)
-	var peakHour int64
-	var peakCPU, peakRAM, peakLoad float64
-	for hour, rec := range clusterHours {
-		var avgCPU, avgRAM float64
-		if rec.cpuCount > 0 {
-			avgCPU = rec.cpuSum / float64(rec.cpuCount)
+	// Cluster peak: the hour with the highest average CPU. Hours are walked
+	// in order so ties resolve to the earliest hour, and hours without CPU
+	// samples cannot win, so no CPU data at all means no peak.
+	hours := make([]int64, 0, len(clusterHours))
+	for hour := range clusterHours {
+		hours = append(hours, hour)
+	}
+	sort.Slice(hours, func(i, j int) bool { return hours[i] < hours[j] })
+	var clusterPeak *ClusterPeak
+	for _, hour := range hours {
+		rec := clusterHours[hour]
+		if rec.cpuCount == 0 {
+			continue
 		}
+		avgCPU := rec.cpuSum / float64(rec.cpuCount)
+		if clusterPeak != nil && avgCPU <= clusterPeak.CPUAvg {
+			continue
+		}
+		var avgRAM float64
 		if rec.ramCount > 0 {
 			avgRAM = rec.ramSum / float64(rec.ramCount)
 		}
-		if avgCPU > peakCPU || peakHour == 0 {
-			peakHour = hour
-			peakCPU = avgCPU
-			peakRAM = avgRAM
-			peakLoad = rec.loadSum
-		}
-	}
-
-	var clusterPeak *ClusterPeak
-	if peakHour > 0 {
 		clusterPeak = &ClusterPeak{
-			Time:    time.Unix(peakHour, 0),
-			CPUAvg:  peakCPU,
-			RAMAvg:  peakRAM,
-			LoadAvg: peakLoad,
+			Time:    time.Unix(hour, 0),
+			CPUAvg:  avgCPU,
+			RAMAvg:  avgRAM,
+			LoadAvg: rec.loadSum,
 		}
 	}
 

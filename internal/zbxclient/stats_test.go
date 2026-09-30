@@ -127,3 +127,47 @@ func TestResolveTargetsKeepsAPIOrder(t *testing.T) {
 		}
 	}
 }
+
+func peakClient(t *testing.T, items, trends string) *Client {
+	t.Helper()
+	ts := newRPCServer(t, map[string]string{
+		"hostinterface.get": `[{"hostid":"10","ip":"10.0.0.1"}]`,
+		"host.get":          `[{"hostid":"10","host":"h1","name":"h1"}]`,
+		"item.get":          items,
+		"trend.get":         trends,
+	})
+	t.Cleanup(ts.Close)
+	return NewClient(&config.Profile{URL: ts.URL, Token: "t"}, 5*time.Second)
+}
+
+func peakQuery(t *testing.T) StatsQuery {
+	loc, _ := time.LoadLocation("Asia/Ho_Chi_Minh")
+	f, _ := NewTrendFilter(false, "", false, loc)
+	return StatsQuery{Targets: []string{"10.0.0.1"}, TimeFrom: 0, TimeTill: 3 * 3600, Filter: f, Concurrency: 1}
+}
+
+func TestClusterPeakNilWithoutCPUSamples(t *testing.T) {
+	c := peakClient(t, `[{"itemid":"3","key_":"vm.memory.utilization","lastvalue":"1"}]`,
+		`[{"clock":"3600","value_min":"40","value_avg":"50","value_max":"60"},{"clock":"7200","value_min":"40","value_avg":"55","value_max":"60"}]`)
+	_, peak, err := c.GetHostStatsSummary(context.Background(), peakQuery(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if peak != nil {
+		t.Fatalf("no host has CPU samples, want nil peak, got %+v", peak)
+	}
+}
+
+func TestClusterPeakTieIsEarliestHour(t *testing.T) {
+	trends := `[{"clock":"7200","value_min":"1","value_avg":"30","value_max":"40"},{"clock":"3600","value_min":"1","value_avg":"30","value_max":"40"},{"clock":"10800","value_min":"1","value_avg":"10","value_max":"40"}]`
+	c := peakClient(t, `[{"itemid":"2","key_":"system.cpu.util","lastvalue":"1"}]`, trends)
+	for i := 0; i < 30; i++ {
+		_, peak, err := c.GetHostStatsSummary(context.Background(), peakQuery(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if peak == nil || peak.Time.Unix() != 3600 || peak.CPUAvg != 30 {
+			t.Fatalf("run %d: want earliest tied hour 3600 cpu 30, got %+v", i, peak)
+		}
+	}
+}
