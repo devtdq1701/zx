@@ -25,7 +25,13 @@ func RenderStatsTable(w io.Writer, stats []zbxclient.HostStats, peak *zbxclient.
 	fmt.Fprintln(tw, header)
 	fmt.Fprintln(tw, strings.Repeat("-", 100))
 
+	var failedCount int
 	for _, s := range stats {
+		if s.Error != "" {
+			failedCount++
+			fmt.Fprintf(tw, "%s\t%s\tERROR: %s\t\t\t\t\t\t\t\n", s.IP, s.HostName, s.Error)
+			continue
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%d\t%.1f\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f\t%.2f\n",
 			s.IP,
 			s.HostName,
@@ -51,5 +57,8 @@ func RenderStatsTable(w io.Writer, stats []zbxclient.HostStats, peak *zbxclient.
 	}
 
 	_ = tw.Flush()
+	if failedCount > 0 {
+		fmt.Fprintf(os.Stderr, "WARNING: %d host(s) failed; numbers for them are not shown\n", failedCount)
+	}
 	fmt.Fprintln(w, "")
 }

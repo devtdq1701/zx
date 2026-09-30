@@ -1,13 +1,16 @@
 package zbxclient
 
 import (
+	"context"
 	"testing"
 	"time"
+
+	"zx/internal/config"
 )
 
 func TestFilterTrendSamples(t *testing.T) {
 	// 2026-09-21 was Monday
-	loc := time.Local
+	loc, _ := time.LoadLocation("Asia/Ho_Chi_Minh")
 
 	// Sample 1: Monday 09:30 (Business hours: inside 08:00-12:00) -> KEEP
 	t1 := time.Date(2026, 9, 21, 9, 30, 0, 0, loc).Unix()
@@ -32,7 +35,8 @@ func TestFilterTrendSamples(t *testing.T) {
 		{Clock: t5, ValueAvg: 40.0, ValueMax: 50.0},
 	}
 
-	filtered := FilterTrendSamples(samples, true)
+	f, _ := NewTrendFilter(true, "", false, loc)
+	filtered := FilterTrendSamples(samples, f)
 	if len(filtered) != 2 {
 		t.Fatalf("expected 2 samples, got %d", len(filtered))
 	}
@@ -54,5 +58,26 @@ func TestFilterTrendSamples(t *testing.T) {
 	_, instantMax := CalculateTrendMetrics(filtered, true)
 	if instantMax != 80.0 { // max of 70.0 and 80.0
 		t.Errorf("expected instant max 80.0, got %f", instantMax)
+	}
+}
+
+func TestHostStatsSurfacesItemError(t *testing.T) {
+	ts := newRPCServer(t, map[string]string{
+		"hostinterface.get": `[{"hostid":"10","ip":"10.0.0.1"}]`,
+		"host.get":          `[{"hostid":"10","host":"h1","name":"h1"}]`,
+		"item.get":          `ERROR`,
+	})
+	defer ts.Close()
+	c := NewClient(&config.Profile{URL: ts.URL, Token: "t"}, 5*time.Second)
+	loc, _ := time.LoadLocation("Asia/Ho_Chi_Minh")
+	f, _ := NewTrendFilter(false, "", false, loc)
+	stats, _, err := c.GetHostStatsSummary(context.Background(), StatsQuery{
+		Targets: []string{"10.0.0.1"}, TimeFrom: 0, TimeTill: 3600, Filter: f, Concurrency: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats) != 1 || stats[0].Error == "" {
+		t.Fatalf("expected per-host error, got %+v", stats)
 	}
 }

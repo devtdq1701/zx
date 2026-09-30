@@ -15,6 +15,7 @@ import (
 
 type TrendSample struct {
 	Clock    int64   `json:"clock"`
+	ValueMin float64 `json:"value_min"`
 	ValueAvg float64 `json:"value_avg"`
 	ValueMax float64 `json:"value_max"`
 }
@@ -22,6 +23,7 @@ type TrendSample struct {
 func (s *TrendSample) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Clock    any `json:"clock"`
+		ValueMin any `json:"value_min"`
 		ValueAvg any `json:"value_avg"`
 		ValueMax any `json:"value_max"`
 	}
@@ -54,6 +56,7 @@ func (s *TrendSample) UnmarshalJSON(data []byte) error {
 	}
 
 	s.Clock = parseInt64(raw.Clock)
+	s.ValueMin = parseFloat(raw.ValueMin)
 	s.ValueAvg = parseFloat(raw.ValueAvg)
 	s.ValueMax = parseFloat(raw.ValueMax)
 	return nil
@@ -71,6 +74,7 @@ type HostStats struct {
 	RAMMax     float64
 	LoadAvg    float64
 	LoadMax    float64
+	Error      string
 }
 
 type ClusterPeak struct {
@@ -80,21 +84,33 @@ type ClusterPeak struct {
 	LoadAvg float64
 }
 
-func FilterTrendSamples(samples []TrendSample, businessHours bool) []TrendSample {
-	if !businessHours {
-		return samples
-	}
+// StatsQuery describes one show_host_stats / export_graph summary request.
+type StatsQuery struct {
+	Targets     []string
+	Hostgroups  []string
+	TimeFrom    int64
+	TimeTill    int64
+	Filter      TrendFilter
+	Peak        bool
+	Concurrency int
+}
 
+// FetchTrends returns hourly trend samples for one item in [from, till].
+func (c *Client) FetchTrends(ctx context.Context, itemID string, from, till int64) ([]TrendSample, error) {
+	var trends []TrendSample
+	err := c.Call(ctx, "trend.get", map[string]any{
+		"itemids":   []string{itemID},
+		"time_from": from,
+		"time_till": till,
+		"output":    []string{"clock", "value_min", "value_avg", "value_max"},
+	}, &trends)
+	return trends, err
+}
+
+func FilterTrendSamples(samples []TrendSample, f TrendFilter) []TrendSample {
 	var res []TrendSample
 	for _, s := range samples {
-		t := time.Unix(s.Clock, 0)
-		wd := t.Weekday()
-		// Monday = 1, Friday = 5
-		if wd < time.Monday || wd > time.Friday {
-			continue
-		}
-		h := t.Hour()
-		if (h >= 8 && h < 12) || (h >= 13 && h < 17) {
+		if f.Keep(s.Clock) {
 			res = append(res, s)
 		}
 	}
@@ -226,13 +242,9 @@ func (c *Client) ResolveHosts(ctx context.Context, targets []string) ([]HostReco
 
 func (c *Client) GetHostStatsSummary(
 	ctx context.Context,
-	targets []string,
-	days int,
-	businessHours bool,
-	peak bool,
-	concurrency int,
+	q StatsQuery,
 ) ([]HostStats, *ClusterPeak, error) {
-	hosts, ipMap, err := c.ResolveHosts(ctx, targets)
+	hosts, ipMap, err := c.ResolveHosts(ctx, q.Targets)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolving hosts: %w", err)
 	}
@@ -240,9 +252,7 @@ func (c *Client) GetHostStatsSummary(
 		return nil, nil, fmt.Errorf("no hosts found matching targets")
 	}
 
-	now := time.Now().Unix()
-	timeFrom := now - int64(days*86400)
-
+	concurrency := q.Concurrency
 	if concurrency <= 0 {
 		concurrency = 10
 	}
@@ -274,6 +284,11 @@ func (c *Client) GetHostStatsSummary(
 				return gctx.Err()
 			}
 
+			hName := host.Name
+			if hName == "" {
+				hName = host.Host
+			}
+
 			// Fetch items
 			var items []ItemRecord
 			err := c.Call(gctx, "item.get", map[string]any{
@@ -281,6 +296,14 @@ func (c *Client) GetHostStatsSummary(
 				"output":  []string{"itemid", "name", "key_", "lastvalue"},
 			}, &items)
 			if err != nil {
+				mu.Lock()
+				results[idx] = HostStats{
+					HostID:   host.HostID,
+					HostName: hName,
+					IP:       ipMap[host.HostID],
+					Error:    "item.get: " + err.Error(),
+				}
+				mu.Unlock()
 				return nil
 			}
 
@@ -302,53 +325,14 @@ func (c *Client) GetHostStatsSummary(
 				}
 			}
 
-			var cpuUtilID string
-			for _, it := range items {
-				if it.Key == "system.cpu.util" {
-					cpuUtilID = it.ItemID
-					break
+			itemID := func(metric string) string {
+				m, _ := LookupMetric(metric)
+				if it, ok := m.FindItem(items); ok {
+					return it.ItemID
 				}
+				return ""
 			}
-			if cpuUtilID == "" {
-				for _, it := range items {
-					if strings.Contains(strings.ToLower(it.Name), "cpu utilization") {
-						cpuUtilID = it.ItemID
-						break
-					}
-				}
-			}
-
-			var memUtilID string
-			for _, it := range items {
-				if it.Key == "vm.memory.utilization" || it.Key == "vm.memory.util" || it.Key == "vm.memory.size[pused]" {
-					memUtilID = it.ItemID
-					break
-				}
-			}
-			if memUtilID == "" {
-				for _, it := range items {
-					if strings.Contains(strings.ToLower(it.Name), "memory utilization") {
-						memUtilID = it.ItemID
-						break
-					}
-				}
-			}
-
-			var loadID string
-			for _, it := range items {
-				if it.Key == "system.cpu.load[all,avg15]" || it.Key == "system.cpu.load[percpu,avg15]" {
-					loadID = it.ItemID
-					break
-				}
-			}
-			if loadID == "" {
-				for _, it := range items {
-					if strings.Contains(it.Key, "system.cpu.load") && strings.Contains(it.Key, "15") {
-						loadID = it.ItemID
-						break
-					}
-				}
-			}
+			cpuUtilID, memUtilID, loadID := itemID("cpu"), itemID("ram"), itemID("load")
 
 			cores, _ := strconv.Atoi(cpuNumVal)
 			if cores <= 0 && cpuNumID != "" {
@@ -389,31 +373,24 @@ func (c *Client) GetHostStatsSummary(
 				}
 			}
 
-			// Helper to fetch and filter trends
+			var fetchErrs []string
 			fetchMetric := func(itemID string) (float64, float64, []TrendSample) {
 				if itemID == "" {
 					return 0, 0, nil
 				}
-				var trends []TrendSample
-				_ = c.Call(gctx, "trend.get", map[string]any{
-					"itemids":   []string{itemID},
-					"time_from": timeFrom,
-					"time_till": now,
-					"output":    []string{"clock", "value_avg", "value_max"},
-				}, &trends)
-				filtered := FilterTrendSamples(trends, businessHours)
-				avg, max := CalculateTrendMetrics(filtered, peak)
+				trends, err := c.FetchTrends(gctx, itemID, q.TimeFrom, q.TimeTill)
+				if err != nil {
+					fetchErrs = append(fetchErrs, "trend.get "+itemID+": "+err.Error())
+					return 0, 0, nil
+				}
+				filtered := FilterTrendSamples(trends, q.Filter)
+				avg, max := CalculateTrendMetrics(filtered, q.Peak)
 				return avg, max, filtered
 			}
 
 			cpuAvg, cpuMax, cpuTrends := fetchMetric(cpuUtilID)
 			ramAvg, ramMax, ramTrends := fetchMetric(memUtilID)
 			loadAvg, loadMax, loadTrends := fetchMetric(loadID)
-
-			hName := host.Name
-			if hName == "" {
-				hName = host.Host
-			}
 
 			stat := HostStats{
 				HostID:     host.HostID,
@@ -427,40 +404,43 @@ func (c *Client) GetHostStatsSummary(
 				RAMMax:     ramMax,
 				LoadAvg:    loadAvg,
 				LoadMax:    loadMax,
+				Error:      strings.Join(fetchErrs, "; "),
 			}
 
 			mu.Lock()
 			results[idx] = stat
 
 			// Aggregate for cluster peak calculation
-			for _, s := range cpuTrends {
-				hour := (s.Clock / 3600) * 3600
-				rec, ok := clusterHours[hour]
-				if !ok {
-					rec = &hourlyClusterMetric{}
-					clusterHours[hour] = rec
+			if stat.Error == "" {
+				for _, s := range cpuTrends {
+					hour := (s.Clock / 3600) * 3600
+					rec, ok := clusterHours[hour]
+					if !ok {
+						rec = &hourlyClusterMetric{}
+						clusterHours[hour] = rec
+					}
+					rec.cpuSum += s.ValueAvg
+					rec.cpuCount++
 				}
-				rec.cpuSum += s.ValueAvg
-				rec.cpuCount++
-			}
-			for _, s := range ramTrends {
-				hour := (s.Clock / 3600) * 3600
-				rec, ok := clusterHours[hour]
-				if !ok {
-					rec = &hourlyClusterMetric{}
-					clusterHours[hour] = rec
+				for _, s := range ramTrends {
+					hour := (s.Clock / 3600) * 3600
+					rec, ok := clusterHours[hour]
+					if !ok {
+						rec = &hourlyClusterMetric{}
+						clusterHours[hour] = rec
+					}
+					rec.ramSum += s.ValueAvg
+					rec.ramCount++
 				}
-				rec.ramSum += s.ValueAvg
-				rec.ramCount++
-			}
-			for _, s := range loadTrends {
-				hour := (s.Clock / 3600) * 3600
-				rec, ok := clusterHours[hour]
-				if !ok {
-					rec = &hourlyClusterMetric{}
-					clusterHours[hour] = rec
+				for _, s := range loadTrends {
+					hour := (s.Clock / 3600) * 3600
+					rec, ok := clusterHours[hour]
+					if !ok {
+						rec = &hourlyClusterMetric{}
+						clusterHours[hour] = rec
+					}
+					rec.loadSum += s.ValueAvg
 				}
-				rec.loadSum += s.ValueAvg
 			}
 			mu.Unlock()
 

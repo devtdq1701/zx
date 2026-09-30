@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"zx/internal/render"
+	"zx/internal/zbxclient"
 )
 
 var (
@@ -70,17 +72,19 @@ var showHostStatsCmd = &cobra.Command{
 			concurrency = 10
 		}
 
-		fmt.Printf("Calculating resource statistics for %d targets (%d days, business_hours=%v, peak=%v)...\n",
-			len(targets), statsDays, statsBusinessHours, statsPeak)
-
-		stats, clusterPeak, err := client.GetHostStatsSummary(
-			cmd.Context(),
-			targets,
-			statsDays,
-			statsBusinessHours,
-			statsPeak,
-			concurrency,
-		)
+		loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+		if err != nil {
+			return err
+		}
+		filter, err := zbxclient.NewTrendFilter(statsBusinessHours, "", false, loc)
+		if err != nil {
+			return err
+		}
+		now := time.Now().Unix()
+		stats, clusterPeak, err := client.GetHostStatsSummary(cmd.Context(), zbxclient.StatsQuery{
+			Targets: targets, TimeFrom: now - int64(statsDays*86400), TimeTill: now,
+			Filter: filter, Peak: statsPeak, Concurrency: concurrency,
+		})
 		if err != nil {
 			return fmt.Errorf("calculating stats: %w", err)
 		}
