@@ -82,3 +82,43 @@ func TestSendToValueEmailIsArray(t *testing.T) {
 		t.Fatal("mediaString")
 	}
 }
+
+// numericUserServer answers user.get by ID with byID and by login filter
+// with byName, so a digit-only login can match two different users.
+func numericUserServer(t *testing.T, byID, byName string) *Client {
+	return exactClient(t, func(m string, p json.RawMessage) string {
+		switch m {
+		case "apiinfo.version":
+			return `"7.4.14"`
+		case "user.get":
+			if strings.Contains(string(p), `"userids"`) {
+				return byID
+			}
+			return byName
+		}
+		return `[]`
+	})
+}
+
+func TestResolveExactUserNumericLoginAmbiguous(t *testing.T) {
+	c := numericUserServer(t, `[{"userid":"12345","username":"boss"}]`, `[{"userid":"7","username":"12345"}]`)
+	if _, err := c.ResolveExactUser(context.Background(), "12345"); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("login 12345 vs userid 12345 must be ambiguous, got %v", err)
+	}
+}
+
+func TestResolveExactUserNumericOnlyID(t *testing.T) {
+	c := numericUserServer(t, `[{"userid":"12345","username":"boss"}]`, `[]`)
+	u, err := c.ResolveExactUser(context.Background(), "12345")
+	if err != nil || u.UserID != "12345" {
+		t.Fatalf("got %+v %v", u, err)
+	}
+}
+
+func TestResolveExactUserNumericOnlyLogin(t *testing.T) {
+	c := numericUserServer(t, `[]`, `[{"userid":"7","username":"12345"}]`)
+	u, err := c.ResolveExactUser(context.Background(), "12345")
+	if err != nil || u.UserID != "7" {
+		t.Fatalf("got %+v %v", u, err)
+	}
+}

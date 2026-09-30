@@ -91,23 +91,27 @@ type GroupRecord struct {
 	Name    string `json:"name"`
 }
 
-// ResolveExactGroup resolves a host group by exact name or existing ID.
+// ResolveExactGroup resolves a host group by exact name or existing ID; a
+// digit-only value is checked as both.
 func (c *Client) ResolveExactGroup(ctx context.Context, nameOrID string) (GroupRecord, error) {
 	nameOrID = strings.TrimSpace(nameOrID)
-	params := map[string]any{"output": []string{"groupid", "name"}}
+	lookups := []map[string]any{{"filter": map[string]string{"name": nameOrID}}}
 	if isNumericID(nameOrID) {
-		params["groupids"] = []string{nameOrID}
-	} else {
-		params["filter"] = map[string]string{"name": nameOrID}
-	}
-	var found []GroupRecord
-	if err := c.Call(ctx, "hostgroup.get", params, &found); err != nil {
-		return GroupRecord{}, fmt.Errorf("hostgroup.get: %w", err)
+		lookups = append(lookups, map[string]any{"groupids": []string{nameOrID}})
 	}
 	var exact []GroupRecord
-	for _, g := range found {
-		if g.GroupID == nameOrID || g.Name == nameOrID {
-			exact = append(exact, g)
+	seen := map[string]bool{}
+	for _, params := range lookups {
+		params["output"] = []string{"groupid", "name"}
+		var found []GroupRecord
+		if err := c.Call(ctx, "hostgroup.get", params, &found); err != nil {
+			return GroupRecord{}, fmt.Errorf("hostgroup.get: %w", err)
+		}
+		for _, g := range found {
+			if (g.GroupID == nameOrID || g.Name == nameOrID) && !seen[g.GroupID] {
+				seen[g.GroupID] = true
+				exact = append(exact, g)
+			}
 		}
 	}
 	return exactlyOne("hostgroup", nameOrID, exact, func(g GroupRecord) string { return g.Name + " (" + g.GroupID + ")" })
@@ -125,6 +129,32 @@ func (c *Client) ResolveExactTemplate(ctx context.Context, nameOrID string) (Tem
 	nameOrID = strings.TrimSpace(nameOrID)
 	output := []string{"templateid", "host", "name"}
 	var exact []TemplateRecord
+	seen := map[string]bool{}
+	add := func(tp TemplateRecord) {
+		if !seen[tp.TemplateID] {
+			seen[tp.TemplateID] = true
+			exact = append(exact, tp)
+		}
+	}
+	for _, field := range []string{"host", "name"} {
+		var found []TemplateRecord
+		if err := c.Call(ctx, "template.get", map[string]any{
+			"filter": map[string]string{field: nameOrID},
+			"output": output,
+		}, &found); err != nil {
+			return TemplateRecord{}, fmt.Errorf("template.get: %w", err)
+		}
+		for _, tp := range found {
+			if (field == "host" && tp.Host == nameOrID) || (field == "name" && tp.Name == nameOrID) {
+				add(tp)
+			}
+		}
+		if len(exact) > 0 {
+			break
+		}
+	}
+	// A digit-only value may also be a templateid; a different template
+	// matching by ID makes the target ambiguous.
 	if isNumericID(nameOrID) {
 		var found []TemplateRecord
 		if err := c.Call(ctx, "template.get", map[string]any{"templateids": []string{nameOrID}, "output": output}, &found); err != nil {
@@ -132,25 +162,7 @@ func (c *Client) ResolveExactTemplate(ctx context.Context, nameOrID string) (Tem
 		}
 		for _, tp := range found {
 			if tp.TemplateID == nameOrID {
-				exact = append(exact, tp)
-			}
-		}
-	} else {
-		for _, field := range []string{"host", "name"} {
-			var found []TemplateRecord
-			if err := c.Call(ctx, "template.get", map[string]any{
-				"filter": map[string]string{field: nameOrID},
-				"output": output,
-			}, &found); err != nil {
-				return TemplateRecord{}, fmt.Errorf("template.get: %w", err)
-			}
-			for _, tp := range found {
-				if (field == "host" && tp.Host == nameOrID) || (field == "name" && tp.Name == nameOrID) {
-					exact = append(exact, tp)
-				}
-			}
-			if len(exact) > 0 {
-				break
+				add(tp)
 			}
 		}
 	}

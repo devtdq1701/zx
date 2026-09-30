@@ -85,3 +85,65 @@ func TestResolveExactTemplateByName(t *testing.T) {
 		t.Fatalf("got %+v %v", tp, err)
 	}
 }
+
+func TestResolveExactGroupNumericName(t *testing.T) {
+	cases := []struct {
+		name, byID, byName, want string
+	}{
+		{"ambiguous", `[{"groupid":"2024","name":"Linux"}]`, `[{"groupid":"55","name":"2024"}]`, ""},
+		{"only id", `[{"groupid":"2024","name":"Linux"}]`, `[]`, "2024"},
+		{"only name", `[]`, `[{"groupid":"55","name":"2024"}]`, "55"},
+	}
+	for _, tc := range cases {
+		c := exactClient(t, func(m string, p json.RawMessage) string {
+			if m != "hostgroup.get" {
+				return `[]`
+			}
+			if strings.Contains(string(p), `"groupids"`) {
+				return tc.byID
+			}
+			return tc.byName
+		})
+		g, err := c.ResolveExactGroup(context.Background(), "2024")
+		if tc.want == "" {
+			if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+				t.Fatalf("%s: want ambiguous, got %+v %v", tc.name, g, err)
+			}
+			continue
+		}
+		if err != nil || g.GroupID != tc.want {
+			t.Fatalf("%s: got %+v %v", tc.name, g, err)
+		}
+	}
+}
+
+func TestResolveExactTemplateNumericName(t *testing.T) {
+	cases := []struct {
+		name, byID, byName, want string
+	}{
+		{"ambiguous", `[{"templateid":"10050","host":"Linux","name":"Linux"}]`, `[{"templateid":"77","host":"10050","name":"10050"}]`, ""},
+		{"only id", `[{"templateid":"10050","host":"Linux","name":"Linux"}]`, `[]`, "10050"},
+		{"only name", `[]`, `[{"templateid":"77","host":"10050","name":"10050"}]`, "77"},
+	}
+	for _, tc := range cases {
+		c := exactClient(t, func(m string, p json.RawMessage) string {
+			if m != "template.get" {
+				return `[]`
+			}
+			if strings.Contains(string(p), `"templateids"`) {
+				return tc.byID
+			}
+			return tc.byName
+		})
+		tp, err := c.ResolveExactTemplate(context.Background(), "10050")
+		if tc.want == "" {
+			if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+				t.Fatalf("%s: want ambiguous, got %+v %v", tc.name, tp, err)
+			}
+			continue
+		}
+		if err != nil || tp.TemplateID != tc.want {
+			t.Fatalf("%s: got %+v %v", tc.name, tp, err)
+		}
+	}
+}

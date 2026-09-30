@@ -24,21 +24,26 @@ func (c *Client) ResolveExactUser(ctx context.Context, login string) (UserRef, e
 	if v54 {
 		field = "username"
 	}
-	params := map[string]any{"output": []string{"userid", field}}
+	// A digit-only login may be a login or a userid: check both so two
+	// different users are reported as ambiguous instead of picking one.
+	lookups := []map[string]any{{"filter": map[string]string{field: login}}}
 	if isNumericID(login) {
-		params["userids"] = []string{login}
-	} else {
-		params["filter"] = map[string]string{field: login}
-	}
-	var rows []map[string]any
-	if err := c.Call(ctx, "user.get", params, &rows); err != nil {
-		return UserRef{}, fmt.Errorf("user.get: %w", err)
+		lookups = append(lookups, map[string]any{"userids": []string{login}})
 	}
 	var users []UserRef
-	for _, r := range rows {
-		id, name := mediaString(r["userid"]), mediaString(r[field])
-		if id == login || name == login {
-			users = append(users, UserRef{UserID: id, Login: name})
+	seen := map[string]bool{}
+	for _, params := range lookups {
+		params["output"] = []string{"userid", field}
+		var rows []map[string]any
+		if err := c.Call(ctx, "user.get", params, &rows); err != nil {
+			return UserRef{}, fmt.Errorf("user.get: %w", err)
+		}
+		for _, r := range rows {
+			id, name := mediaString(r["userid"]), mediaString(r[field])
+			if (id == login || name == login) && !seen[id] {
+				seen[id] = true
+				users = append(users, UserRef{UserID: id, Login: name})
+			}
 		}
 	}
 	return exactlyOne("user", login, users, func(u UserRef) string { return u.Login + " (" + u.UserID + ")" })
