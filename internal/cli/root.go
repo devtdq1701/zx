@@ -24,6 +24,9 @@ var (
 		Short: "zx - Fast Golang Zabbix CLI & REPL client",
 		Long:  "Fast, standalone Zabbix terminal client with multi-cluster profiles, concurrent host metrics, and PNG graph exports.",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateFormat(); err != nil {
+				return err
+			}
 			var err error
 			if cfgFile != "" {
 				appConfig, err = config.LoadConfigFrom(cfgFile)
@@ -79,6 +82,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default ~/.config/zx/config.yaml)")
 	rootCmd.PersistentFlags().StringVarP(&profileFlag, "profile", "p", "", "Zabbix connection profile name")
 	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "enable debug logging")
+	rootCmd.PersistentFlags().StringVar(&formatFlag, "format", "table", "output format: table or json")
+	rootCmd.PersistentFlags().StringVar(&timezoneFlag, "timezone", "Asia/Ho_Chi_Minh", "timezone for hour filters and absolute times")
 
 	rootCmd.AddCommand(preflightCmd)
 }
