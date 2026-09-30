@@ -291,34 +291,49 @@ var (
 	}
 )
 
-// 5. show_alarms (Read-only)
+// 5. show_alarms (Read-only) — same query as zabbix-cli show_alarms.
 var (
-	alarmHostgroup string
-	alarmPriority  int
-	alarmUnack     bool
-	showAlarmsCmd  = &cobra.Command{
+	alarmHostgroup   string
+	alarmPriority    int
+	alarmDescription string
+	alarmIncludeAck  bool
+	showAlarmsCmd    = &cobra.Command{
 		Use:   "show_alarms [TARGET]",
-		Short: "Show active problems/alarms for target, hostgroup, or cluster",
+		Short: "Show triggers currently in PROBLEM state (like zabbix-cli show_alarms)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if alarmPriority < -1 || alarmPriority > 5 {
+				return fmt.Errorf("invalid --priority %d; expected 0..5", alarmPriority)
+			}
 			client, _, _, err := GetActiveClient()
 			if err != nil {
 				return err
 			}
-			params := map[string]any{
-				"output":             []string{"eventid", "name", "severity", "clock", "acknowledged"},
-				"selectAcknowledged": "extend",
-				"recent":             "true",
-				"sortfield":          []string{"eventid"},
-				"sortorder":          "DESC",
+			loc, err := Location()
+			if err != nil {
+				return err
 			}
-			if alarmUnack {
-				params["acknowledged"] = false
-			}
+			filter := map[string]any{"value": 1}
 			if alarmPriority >= 0 {
-				params["severities"] = []int{alarmPriority}
+				filter["priority"] = alarmPriority
 			}
-
+			params := map[string]any{
+				"output":            []string{"triggerid", "description", "priority", "lastchange"},
+				"selectHosts":       []string{"host"},
+				"filter":            filter,
+				"skipDependent":     true,
+				"monitored":         true,
+				"active":            true,
+				"expandDescription": true,
+				"sortfield":         "lastchange",
+				"sortorder":         "DESC",
+			}
+			if !alarmIncludeAck {
+				params["withLastEventUnacknowledged"] = true
+			}
+			if alarmDescription != "" {
+				params["search"] = map[string]string{"description": alarmDescription}
+			}
 			if len(args) > 0 && args[0] != "" {
 				hid, err := resolveSingleHostID(cmd, args[0])
 				if err != nil {
@@ -327,59 +342,58 @@ var (
 				params["hostids"] = []string{hid}
 			}
 			if alarmHostgroup != "" {
-				gid, err := resolveSingleGroupID(cmd, alarmHostgroup)
-				if err != nil {
-					return err
+				var gids []string
+				for _, g := range splitCSV(alarmHostgroup) {
+					gid, err := resolveSingleGroupID(cmd, g)
+					if err != nil {
+						return err
+					}
+					gids = append(gids, gid)
 				}
-				params["groupids"] = []string{gid}
+				params["groupids"] = gids
 			}
 
-			type AlarmRecord struct {
-				EventID      string `json:"eventid"`
-				Name         string `json:"name"`
-				Severity     string `json:"severity"`
-				Clock        string `json:"clock"`
-				Acknowledged string `json:"acknowledged"`
+			type alarmRecord struct {
+				TriggerID   string `json:"triggerid"`
+				Description string `json:"description"`
+				Priority    string `json:"priority"`
+				LastChange  string `json:"lastchange"`
+				Hosts       []struct {
+					Host string `json:"host"`
+				} `json:"hosts"`
 			}
-			var alarms []AlarmRecord
-			if err := client.Call(cmd.Context(), "problem.get", params, &alarms); err != nil {
-				return err
+			alarms := []alarmRecord{}
+			if err := client.Call(cmd.Context(), "trigger.get", params, &alarms); err != nil {
+				return fmt.Errorf("trigger.get: %w", err)
 			}
-
+			if alarms == nil {
+				alarms = []alarmRecord{}
+			}
 			if OutputFormat() == "json" {
 				return writeJSON(cmd.OutOrStdout(), alarms)
 			}
 
-			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-			fmt.Fprintln(tw, "EVENTID\tSEVERITY\tTIME\tACK\tPROBLEM")
-			fmt.Fprintln(tw, strings.Repeat("-", 80))
 			sevNames := map[string]string{
-				"0": "Not classified",
-				"1": "Information",
-				"2": "Warning",
-				"3": "Average",
-				"4": "High",
-				"5": "Disaster",
+				"0": "Not classified", "1": "Information", "2": "Warning",
+				"3": "Average", "4": "High", "5": "Disaster",
 			}
-			loc, _ := Location()
-			if loc == nil {
-				loc = time.Local
-			}
+			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
+			fmt.Fprintln(tw, "TRIGGERID\tHOST\tSEVERITY\tLAST CHANGE\tDESCRIPTION")
+			fmt.Fprintln(tw, strings.Repeat("-", 80))
 			for _, a := range alarms {
-				sName := sevNames[a.Severity]
-				if sName == "" {
-					sName = a.Severity
+				var hosts []string
+				for _, h := range a.Hosts {
+					hosts = append(hosts, h.Host)
 				}
-				ackStr := "No"
-				if a.Acknowledged == "1" {
-					ackStr = "Yes"
+				sev := sevNames[a.Priority]
+				if sev == "" {
+					sev = a.Priority
 				}
-				cSec, _ := strconv.ParseInt(a.Clock, 10, 64)
-				cTime := time.Unix(cSec, 0).In(loc).Format("2006-01-02 15:04:05")
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", a.EventID, sName, cTime, ackStr, a.Name)
+				sec, _ := strconv.ParseInt(a.LastChange, 10, 64)
+				when := time.Unix(sec, 0).In(loc).Format("2006-01-02 15:04:05")
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", a.TriggerID, strings.Join(hosts, ","), sev, when, a.Description)
 			}
-			_ = tw.Flush()
-			return nil
+			return tw.Flush()
 		},
 	}
 )
@@ -423,7 +437,7 @@ var showLastValuesCmd = &cobra.Command{
 			return err
 		}
 
-		var filtered []ItemVal
+		filtered := []ItemVal{}
 		for _, it := range items {
 			if pattern == "" || strings.Contains(strings.ToLower(it.Name), pattern) || strings.Contains(strings.ToLower(it.Key), pattern) {
 				filtered = append(filtered, it)
@@ -882,9 +896,10 @@ func init() {
 	ackTrigCmd.Flags().BoolVar(&ackTrigYes, "yes", false, "Confirm execution (bypasses dry-run)")
 
 	// Flags for 5
-	showAlarmsCmd.Flags().StringVar(&alarmHostgroup, "hostgroup", "", "Filter alarms by hostgroup")
-	showAlarmsCmd.Flags().IntVar(&alarmPriority, "priority", -1, "Filter by priority (0=Not classified..5=Disaster)")
-	showAlarmsCmd.Flags().BoolVar(&alarmUnack, "unack", true, "Show unacknowledged problems only")
+	showAlarmsCmd.Flags().StringVar(&alarmHostgroup, "hostgroup", "", "Comma-separated hostgroup(s) to filter by")
+	showAlarmsCmd.Flags().IntVar(&alarmPriority, "priority", -1, "Only this priority (0=Not classified..5=Disaster)")
+	showAlarmsCmd.Flags().StringVar(&alarmDescription, "description", "", "Only triggers whose description contains this text")
+	showAlarmsCmd.Flags().BoolVar(&alarmIncludeAck, "ack", false, "Include alarms whose last event is acknowledged (zabbix-cli --ack)")
 
 	// Flags for 7
 	monitorHostCmd.Flags().StringVar(&monitorStatus, "status", "monitored", "Monitoring status: monitored or unmonitored")

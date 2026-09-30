@@ -210,9 +210,10 @@ func TestAdminOpsReadOnly(t *testing.T) {
 	_, cleanup := setupMockClient(t, map[string]any{
 		"apiinfo.version": "7.0.0",
 		"hostgroup.get":   []map[string]any{{"groupid": "5", "name": "G1"}},
-		"problem.get": []map[string]any{
-			{"eventid": "99", "name": "CPU high", "severity": "4", "clock": "1727712000", "acknowledged": "0"},
-		},
+		"trigger.get": []map[string]any{{
+			"triggerid": "99", "description": "CPU high", "priority": "4", "lastchange": "1727712000",
+			"hosts": []map[string]any{{"host": "srv1"}},
+		}},
 		"host.get": []map[string]any{{"hostid": "100", "host": "srv1"}},
 		"item.get": []map[string]any{
 			{"itemid": "1", "name": "CPU load", "key_": "system.cpu.load", "lastvalue": "1.5", "lastclock": "1727712000", "units": ""},
@@ -392,5 +393,88 @@ func TestMacroAndAckValidation(t *testing.T) {
 	}
 	if _, _, err := runCLI(t, "acknowledge_event", "12", "-m", " "); err == nil || !strings.Contains(err.Error(), "message") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func alarmsMock() map[string]any {
+	return map[string]any{
+		"apiinfo.version": "7.4.0",
+		"host.get":        []map[string]any{{"hostid": "111", "host": "eofhni1", "name": "eofhni1"}},
+		"trigger.get": []map[string]any{{
+			"triggerid": "900", "description": "CPU high", "priority": "4", "lastchange": "1790218800",
+			"hosts": []map[string]any{{"host": "eofhni1"}},
+		}},
+	}
+}
+
+func TestShowAlarmsUsesTriggerGetLikePython(t *testing.T) {
+	h, cleanup := setupMockClient(t, alarmsMock())
+	defer cleanup()
+	out, _, err := runCLI(t, "show_alarms", "eofhni1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.count("problem.get") != 0 {
+		t.Fatal("show_alarms must not use problem.get")
+	}
+	p := h.last("trigger.get")
+	if f, _ := p["filter"].(map[string]any); f["value"] != float64(1) {
+		t.Fatalf("filter.value must be 1, got %v", p["filter"])
+	}
+	if p["withLastEventUnacknowledged"] != true {
+		t.Fatalf("default must be unacknowledged only: %v", p)
+	}
+	if _, bad := p["recent"]; bad {
+		t.Fatal("recent must not be sent")
+	}
+	for _, want := range []string{"TRIGGERID", "HOST", "eofhni1", "High", "CPU high"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestShowAlarmsAckIncludesAcknowledged(t *testing.T) {
+	h, cleanup := setupMockClient(t, alarmsMock())
+	defer cleanup()
+	if _, _, err := runCLI(t, "show_alarms", "--ack", "--priority", "4", "--description", "CPU"); err != nil {
+		t.Fatal(err)
+	}
+	p := h.last("trigger.get")
+	if _, has := p["withLastEventUnacknowledged"]; has {
+		t.Fatalf("--ack must drop the unack filter: %v", p)
+	}
+	if f, _ := p["filter"].(map[string]any); f["priority"] != float64(4) {
+		t.Fatalf("priority filter: %v", p["filter"])
+	}
+	if s, _ := p["search"].(map[string]any); s["description"] != "CPU" {
+		t.Fatalf("description search: %v", p["search"])
+	}
+}
+
+func TestShowAlarmsJSONEmptyIsArray(t *testing.T) {
+	_, cleanup := setupMockClient(t, map[string]any{"apiinfo.version": "7.4.0"})
+	defer cleanup()
+	out, _, err := runCLI(t, "--format", "json", "show_alarms")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Fatalf("empty result must be [], got %q", out)
+	}
+}
+
+func TestShowLastValuesJSONEmptyIsArray(t *testing.T) {
+	_, cleanup := setupMockClient(t, map[string]any{
+		"apiinfo.version": "7.4.0",
+		"host.get":        []map[string]any{{"hostid": "111", "host": "eofhni1", "name": "eofhni1"}},
+	})
+	defer cleanup()
+	out, _, err := runCLI(t, "--format", "json", "show_last_values", "eofhni1", "nomatch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Fatalf("got %q", out)
 	}
 }
