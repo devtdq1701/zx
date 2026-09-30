@@ -3,6 +3,8 @@ package cli
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -49,5 +51,32 @@ func TestPreflightFailLine(t *testing.T) {
 	}
 	if !strings.HasPrefix(errOut, "FAIL endpoint=") || !strings.Contains(errOut, "http=500 (unexpected)") {
 		t.Fatalf("stderr %q", errOut)
+	}
+	if strings.Count(errOut, "\n") != 1 {
+		t.Fatalf("stderr must be exactly the FAIL line, got %q", errOut)
+	}
+}
+
+func TestPreflightOtherErrorsStillPrinted(t *testing.T) {
+	withStatusServer(t, 500)
+	// A FAIL must not silence errors of later commands in the same process.
+	if _, _, err := runCLI(t, "preflight"); err == nil {
+		t.Fatal("HTTP 500 must fail")
+	}
+	prev := testProfile
+	testProfile = nil
+	t.Cleanup(func() { testProfile = prev })
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(cfg, []byte("profiles: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"--config", cfg, "preflight"},
+		{"--config", cfg, "--profile", "zz_nosuch", "preflight"},
+	} {
+		out, errOut, err := runCLI(t, args...)
+		if err == nil || out != "" || strings.TrimSpace(errOut) == "" {
+			t.Fatalf("%v: want error on stderr, got out=%q err=%q %v", args, out, errOut, err)
+		}
 	}
 }

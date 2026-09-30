@@ -40,6 +40,9 @@ var preflightCmd = &cobra.Command{
 			detail = "error=" + preflightErrorName(err)
 		}
 		fmt.Fprintf(cmd.ErrOrStderr(), "FAIL endpoint=%s %s latency_ms=%d\n", endpoint, detail, ms)
+		// The FAIL line is the whole stderr contract. Silence only this
+		// error: a static SilenceErrors would also hide config/profile errors.
+		cmd.Root().SilenceErrors = true
 		return errPreflightFailed
 	},
 }

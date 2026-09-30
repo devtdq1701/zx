@@ -35,6 +35,7 @@ func resetFlags(cmd *cobra.Command) {
 // executeLine runs one command line on rootCmd from a clean flag state.
 func executeLine(ctx context.Context, args []string) error {
 	resetFlags(rootCmd)
+	rootCmd.SilenceErrors = false
 	rootCmd.SetArgs(args)
 	return rootCmd.ExecuteContext(ctx)
 }
