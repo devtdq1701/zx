@@ -5,8 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 PY_CLI="/home/quangtd/Workspace/VNPT/EOF/zabbix-cli/.venv/bin/zabbix-cli"
 # Always test a fresh build of the working tree, never bin/zx (user WIP).
+# Every temp file lives under BUILD_DIR so the EXIT trap cleans all of it.
 BUILD_DIR=$(mktemp -d)
 trap 'rm -rf "$BUILD_DIR"' EXIT
+if [[ -n "${ZX_CLI:-}" && "$(realpath -m "$ZX_CLI")" == "$(realpath -m "$REPO_DIR/bin/zx")" ]]; then
+    echo "ZX_CLI must not point at $REPO_DIR/bin/zx (user WIP); unset it to build a fresh binary" >&2
+    exit 1
+fi
 if [[ -z "${ZX_CLI:-}" ]]; then
     ZX_CLI="$BUILD_DIR/zx"
     (cd "$REPO_DIR" && CGO_ENABLED=0 go build \
@@ -25,7 +30,9 @@ for cli in "$PY_CLI" "$ZX_CLI"; do
     echo "$out"
 done
 
-echo "[2/4] Comparing show_host_stats outputs..."
+# show_host_stats is NOT compared: Python and zx resolve targets and define
+# the cluster peak differently, so the two tables are printed for a human.
+echo "[2/4] show_host_stats side by side (informational, not compared)..."
 echo "--- Python zabbix-cli output ---"
 $PY_CLI --profile "$PROFILE" show_host_stats "$TARGETS" -d 7 --business-hours
 
@@ -33,24 +40,23 @@ echo "--- Golang zx output ---"
 $ZX_CLI --profile "$PROFILE" show_host_stats "$TARGETS" -d 7 --business-hours
 
 echo "[3/4] Testing export_graph PNG output..."
-TMP_DIR=$(mktemp -d)
-OUT_PNG="$TMP_DIR/zx_parity_test.png"
+OUT_PNG="$BUILD_DIR/zx_parity_test.png"
 $ZX_CLI --profile "$PROFILE" export_graph "$TARGETS" -m ram -d 7 -o "$OUT_PNG"
-if [[ -f "$OUT_PNG" ]]; then
-    SIZE=$(stat -c%s "$OUT_PNG")
-    HEADER=$(head -c 4 "$OUT_PNG")
-    if [[ "$HEADER" == $'\x89PNG' ]]; then
-        echo "PNG validation PASSED ($SIZE bytes, header=\x89PNG)"
-    else
-        echo "PNG validation FAILED: invalid magic header"
-        rm -rf "$TMP_DIR"
-        exit 1
-    fi
+if [[ ! -s "$OUT_PNG" ]]; then
+    echo "PNG validation FAILED: $OUT_PNG was not written"
+    exit 1
 fi
-rm -rf "$TMP_DIR"
+SIZE=$(stat -c%s "$OUT_PNG")
+HEADER=$(head -c 4 "$OUT_PNG")
+if [[ "$HEADER" != $'\x89PNG' ]]; then
+    echo "PNG validation FAILED: invalid magic header"
+    exit 1
+fi
+echo "PNG validation PASSED ($SIZE bytes, header=\x89PNG)"
 
 echo "[4/4] Comparing export_window JSON..."
-WORK=$(mktemp -d)
+WORK="$BUILD_DIR/window"
+mkdir -p "$WORK"
 for t in $(tr ',' ' ' <<<"$TARGETS"); do
   h=$($ZX_CLI --profile "$PROFILE" --format json show_hosts "$t" 2>/dev/null | python3 -c 'import sys, json; data=json.load(sys.stdin); print(data[0]["host"] if data else sys.argv[1])' "$t" 2>/dev/null || echo "$t")
   echo "$h" >> "$WORK/hosts.txt"
@@ -61,7 +67,6 @@ $PY_CLI --profile "$PROFILE" --format json export_window --from "$FROM" --to "$T
   --timezone Asia/Ho_Chi_Minh --role app --input-file "$WORK/hosts.txt" > "$WORK/py.json"
 $ZX_CLI --profile "$PROFILE" --format json export_window --from "$FROM" --to "$TO" \
   --timezone Asia/Ho_Chi_Minh --role app --input-file "$WORK/hosts.txt" > "$WORK/zx.json"
-python3 "$SCRIPT_DIR/parity_export_window.py" "$WORK/py.json" "$WORK/zx.json" || { rm -rf "$WORK"; exit 1; }
-rm -rf "$WORK"
+python3 "$SCRIPT_DIR/parity_export_window.py" "$WORK/py.json" "$WORK/zx.json"
 
-echo "=== PARITY VERIFICATION COMPLETED SUCCESSFULLY ==="
+echo "=== PARITY VERIFIED: preflight contract, export_graph PNG, export_window JSON (show_host_stats printed only) ==="

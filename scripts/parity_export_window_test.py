@@ -56,6 +56,21 @@ class CompareTest(unittest.TestCase):
         problems, _ = compare(doc(), b)
         self.assertTrue(any("filters" in p for p in problems))
 
+    def test_no_ok_metric_fails(self):
+        a, b = doc(), doc()
+        for d in (a, b):
+            for m in d["hosts"][0]["metrics"].values():
+                m.update(state="NO_SAMPLES", sample_count=0, min=None, avg=None, max=None, peak=None)
+        problems, _ = compare(a, b)
+        self.assertTrue(any("not exercised" in p for p in problems))
+
+    def test_allowed_load_key_still_compares_state_and_samples(self):
+        b = doc(load_key="system.cpu.load[all,avg15]")
+        b["hosts"][0]["metrics"]["load"].update(state="NO_SAMPLES", sample_count=0)
+        problems, notes = compare(doc(), b)
+        self.assertEqual(len(notes), 1)
+        self.assertTrue(any("load" in p and "state/samples" in p for p in problems))
+
 
 if __name__ == "__main__":
     unittest.main()

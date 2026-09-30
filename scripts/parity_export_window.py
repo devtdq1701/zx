@@ -38,27 +38,35 @@ def compare(py, zx):
         problems.append("hosts: empty on both sides; parity not exercised")
     if set(py_hosts) != set(zx_hosts):
         problems.append(f"hosts: py={sorted(py_hosts)} zx={sorted(zx_hosts)}")
+    exercised = False
     for hid in sorted(set(py_hosts) & set(zx_hosts)):
         if py_hosts[hid].get("state") != zx_hosts[hid].get("state"):
             problems.append(f"{hid}.state: py={py_hosts[hid].get('state')} zx={zx_hosts[hid].get('state')}")
         for metric in ("cpu", "ram", "load", "io"):
             a, b = py_hosts[hid]["metrics"].get(metric, {}), zx_hosts[hid]["metrics"].get(metric, {})
+            exercised = exercised or "OK" in (a.get("state"), b.get("state"))
             ma, mb = a.get("mapping") or {}, b.get("mapping") or {}
-            if ma.get("key") != mb.get("key"):
+            same_item = ma.get("key") == mb.get("key")
+            if not same_item:
                 if (metric, ma.get("key"), mb.get("key")) in ALLOWED_KEY_DIFFS:
                     notes.append(f"{hid}.{metric}: intentional item difference py={ma.get('key')} zx={mb.get('key')}")
                 else:
                     problems.append(f"{hid}.{metric}: item key py={ma.get('key')} zx={mb.get('key')}")
-                continue
-            if ma.get("itemid") != mb.get("itemid"):
+                    continue
+            elif ma.get("itemid") != mb.get("itemid"):
                 problems.append(f"{hid}.{metric}: itemid py={ma.get('itemid')} zx={mb.get('itemid')}")
             if a.get("state") != b.get("state") or a.get("sample_count") != b.get("sample_count"):
                 problems.append(f"{hid}.{metric}: state/samples py={a.get('state')}/{a.get('sample_count')} zx={b.get('state')}/{b.get('sample_count')}")
+                continue
+            # Values of a different (allowed) item are expected to differ.
+            if not same_item:
                 continue
             for stat in ("min", "avg", "max", "peak"):
                 va, vb = a.get(stat), b.get(stat)
                 if (va is None) != (vb is None) or (va is not None and abs(va - vb) > TOL):
                     problems.append(f"{hid}.{metric}.{stat}: py={va} zx={vb}")
+    if (py_hosts or zx_hosts) and not exercised:
+        problems.append("metrics: no metric is state OK on either side; parity not exercised")
     return problems, notes
 
 
