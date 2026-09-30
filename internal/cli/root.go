@@ -42,7 +42,7 @@ var (
 				targetProfile = profileFlag
 			}
 
-			if targetProfile != "" {
+			if targetProfile != "" && activeClient == nil {
 				prof, err := appConfig.GetProfile(targetProfile)
 				if err == nil {
 					activeProf = prof
