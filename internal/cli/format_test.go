@@ -22,3 +22,14 @@ func TestWriteJSONSingleLine(t *testing.T) {
 		t.Fatalf("got %q", b.String())
 	}
 }
+
+func TestLocationRejectsEmptyAndLocal(t *testing.T) {
+	prev := timezoneFlag
+	defer func() { timezoneFlag = prev }()
+	for _, tz := range []string{"", "Local", "local"} {
+		timezoneFlag = tz
+		if _, err := Location(); err == nil {
+			t.Errorf("timezone %q must be rejected", tz)
+		}
+	}
+}

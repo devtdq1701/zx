@@ -21,6 +21,9 @@ func OutputFormat() string { return formatFlag }
 
 // Location returns the configured --timezone location.
 func Location() (*time.Location, error) {
+	if strings.TrimSpace(timezoneFlag) == "" || strings.EqualFold(timezoneFlag, "local") {
+		return nil, fmt.Errorf("unknown timezone '%s'; use an IANA name such as Asia/Ho_Chi_Minh", timezoneFlag)
+	}
 	loc, err := time.LoadLocation(timezoneFlag)
 	if err != nil {
 		return nil, fmt.Errorf("unknown timezone '%s'", timezoneFlag)

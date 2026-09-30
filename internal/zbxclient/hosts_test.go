@@ -2,6 +2,8 @@ package zbxclient
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,5 +39,29 @@ func TestDetailedHosts(t *testing.T) {
 	}
 	if len(hosts) != 1 || len(hosts[0].Hostgroups) != 1 || hosts[0].Hostgroups[0] != "HNI" {
 		t.Fatalf("unexpected hosts: %+v", hosts)
+	}
+}
+
+func TestGetDetailedHostsJSONArraysNotNull(t *testing.T) {
+	ts := newRPCServer(t, map[string]string{
+		"apiinfo.version": `"7.4.0"`,
+		"host.get":        `[{"hostid":"1","host":"h","name":"h","status":"0"}]`,
+	})
+	defer ts.Close()
+	c := NewClient(&config.Profile{URL: ts.URL, Token: "t"}, 5*time.Second)
+	hosts, err := c.GetDetailedHosts(context.Background(), "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(hosts)
+	if strings.Contains(string(b), "null") {
+		t.Fatalf("arrays must be [] not null: %s", b)
+	}
+	ts2 := newRPCServer(t, map[string]string{"apiinfo.version": `"7.4.0"`, "host.get": `[]`})
+	defer ts2.Close()
+	c2 := NewClient(&config.Profile{URL: ts2.URL, Token: "t"}, 5*time.Second)
+	none, _ := c2.GetDetailedHosts(context.Background(), "zz")
+	if b, _ := json.Marshal(none); string(b) != "[]" {
+		t.Fatalf("empty result must marshal to [], got %s", b)
 	}
 }

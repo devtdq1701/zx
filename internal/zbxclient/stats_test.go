@@ -2,6 +2,7 @@ package zbxclient
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,5 +80,50 @@ func TestHostStatsSurfacesItemError(t *testing.T) {
 	}
 	if len(stats) != 1 || stats[0].Error == "" {
 		t.Fatalf("expected per-host error, got %+v", stats)
+	}
+}
+
+func TestHostStatsMarksMissingMetrics(t *testing.T) {
+	ts := newRPCServer(t, map[string]string{
+		"hostinterface.get": `[{"hostid":"10","ip":"10.0.0.1"}]`,
+		"host.get":          `[{"hostid":"10","host":"h1","name":"h1"}]`,
+		"item.get":          `[{"itemid":"1","key_":"system.cpu.num","lastvalue":"4"},{"itemid":"2","key_":"system.cpu.util","lastvalue":"1"}]`,
+		"trend.get":         `[]`,
+	})
+	defer ts.Close()
+	c := NewClient(&config.Profile{URL: ts.URL, Token: "t"}, 5*time.Second)
+	loc, _ := time.LoadLocation("Asia/Ho_Chi_Minh")
+	f, _ := NewTrendFilter(false, "", false, loc)
+	stats, _, err := c.GetHostStatsSummary(context.Background(), StatsQuery{
+		Targets: []string{"10.0.0.1"}, TimeFrom: 0, TimeTill: 3600, Filter: f, Concurrency: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(stats[0].Missing, ",")
+	if got != "cpu,ram,load" {
+		t.Fatalf("Missing=%q, want cpu,ram,load (cpu has no trends, ram/load have no item)", got)
+	}
+}
+
+func TestResolveTargetsKeepsAPIOrder(t *testing.T) {
+	ts := newRPCServer(t, map[string]string{
+		"host.get":          `[{"hostid":"30","host":"c","name":"c"},{"hostid":"20","host":"b","name":"b"},{"hostid":"40","host":"d","name":"d"}]`,
+		"hostinterface.get": `[{"hostid":"30","ip":"1"},{"hostid":"20","ip":"2"},{"hostid":"40","ip":"3"}]`,
+	})
+	defer ts.Close()
+	c := NewClient(&config.Profile{URL: ts.URL, Token: "t"}, 5*time.Second)
+	for i := 0; i < 10; i++ {
+		hosts, _, err := c.ResolveHosts(context.Background(), []string{"app*"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []string
+		for _, h := range hosts {
+			ids = append(ids, h.HostID)
+		}
+		if strings.Join(ids, ",") != "30,20,40" {
+			t.Fatalf("run %d: order %v, want API order 30,20,40", i, ids)
+		}
 	}
 }

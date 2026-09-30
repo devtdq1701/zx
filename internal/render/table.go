@@ -6,13 +6,17 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"zx/internal/zbxclient"
 )
 
-func RenderStatsTable(w io.Writer, stats []zbxclient.HostStats, peak *zbxclient.ClusterPeak, title string) {
+func RenderStatsTable(w io.Writer, stats []zbxclient.HostStats, peak *zbxclient.ClusterPeak, title string, loc *time.Location) {
 	if w == nil {
 		w = os.Stdout
+	}
+	if loc == nil {
+		loc = time.Local
 	}
 
 	fmt.Fprintln(w, "")
@@ -32,24 +36,38 @@ func RenderStatsTable(w io.Writer, stats []zbxclient.HostStats, peak *zbxclient.
 			fmt.Fprintf(tw, "%s\t%s\tERROR: %s\t\t\t\t\t\t\t\n", s.IP, s.HostName, s.Error)
 			continue
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%.1f\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f%%\t%.2f\t%.2f\n",
-			s.IP,
-			s.HostName,
-			s.CPUCores,
-			s.RAMTotalGB,
-			s.CPUAvg,
-			s.CPUMax,
-			s.RAMAvg,
-			s.RAMMax,
-			s.LoadAvg,
-			s.LoadMax,
+		has := func(metric string) bool {
+			for _, m := range s.Missing {
+				if m == metric {
+					return true
+				}
+			}
+			return false
+		}
+		pct := func(v float64, metric string) string {
+			if has(metric) {
+				return "-"
+			}
+			return fmt.Sprintf("%.2f%%", v)
+		}
+		num := func(v float64, metric string) string {
+			if has(metric) {
+				return "-"
+			}
+			return fmt.Sprintf("%.2f", v)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%.1f\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			s.IP, s.HostName, s.CPUCores, s.RAMTotalGB,
+			pct(s.CPUAvg, "cpu"), pct(s.CPUMax, "cpu"),
+			pct(s.RAMAvg, "ram"), pct(s.RAMMax, "ram"),
+			num(s.LoadAvg, "load"), num(s.LoadMax, "load"),
 		)
 	}
 
 	if peak != nil {
 		fmt.Fprintln(tw, strings.Repeat("-", 100))
 		fmt.Fprintf(tw, "CLUSTER PEAK\t%s\t-\t-\t%.2f%%\t-\t%.2f%%\t-\t%.2f\t-\n",
-			peak.Time.Format("2006-01-02 15:04"),
+			peak.Time.In(loc).Format("2006-01-02 15:04"),
 			peak.CPUAvg,
 			peak.RAMAvg,
 			peak.LoadAvg,

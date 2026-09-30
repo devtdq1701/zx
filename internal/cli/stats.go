@@ -35,7 +35,8 @@ func statsJSON(stats []zbxclient.HostStats, peak *zbxclient.ClusterPeak, start, 
 			"hostid": s.HostID, "host": s.HostName, "ip": s.IP, "cpu_cores": s.CPUCores,
 			"ram_total_gb": s.RAMTotalGB, "cpu_avg": s.CPUAvg, "cpu_max": s.CPUMax,
 			"ram_avg": s.RAMAvg, "ram_max": s.RAMMax, "load_avg": s.LoadAvg, "load_max": s.LoadMax,
-			"error": s.Error,
+			"error":   s.Error,
+			"missing": append([]string{}, s.Missing...),
 		})
 	}
 	var cp any
@@ -158,7 +159,7 @@ var showHostStatsCmd = &cobra.Command{
 		}
 		title += ")"
 
-		render.RenderStatsTable(cmd.OutOrStdout(), stats, clusterPeak, title)
+		render.RenderStatsTable(cmd.OutOrStdout(), stats, clusterPeak, title, loc)
 		return nil
 	},
 }

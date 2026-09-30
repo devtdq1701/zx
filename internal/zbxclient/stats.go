@@ -75,6 +75,7 @@ type HostStats struct {
 	LoadAvg    float64
 	LoadMax    float64
 	Error      string
+	Missing    []string
 }
 
 type ClusterPeak struct {
@@ -159,6 +160,13 @@ type HostInterfaceRecord struct {
 func (c *Client) resolveTargets(ctx context.Context, targets []string) ([]HostRecord, map[string]string, error) {
 	hostMap := make(map[string]HostRecord)
 	ipMap := make(map[string]string)
+	var order []string
+	addHost := func(h HostRecord) {
+		if _, ok := hostMap[h.HostID]; !ok {
+			order = append(order, h.HostID)
+		}
+		hostMap[h.HostID] = h
+	}
 	var firstErr error
 
 	for _, target := range targets {
@@ -193,7 +201,7 @@ func (c *Client) resolveTargets(ctx context.Context, targets []string) ([]HostRe
 				}
 				if err == nil {
 					for _, h := range hosts {
-						hostMap[h.HostID] = h
+						addHost(h)
 					}
 				}
 				continue
@@ -217,14 +225,14 @@ func (c *Client) resolveTargets(ctx context.Context, targets []string) ([]HostRe
 		}
 		if err == nil {
 			for _, h := range hosts {
-				hostMap[h.HostID] = h
+				addHost(h)
 			}
 		}
 	}
 
-	var res []HostRecord
-	for _, h := range hostMap {
-		res = append(res, h)
+	res := make([]HostRecord, 0, len(order))
+	for _, id := range order {
+		res = append(res, hostMap[id])
 	}
 
 	// For any host without IP in ipMap, fetch its interfaces
@@ -489,9 +497,10 @@ func (c *Client) GetHostStatsSummary(
 				}
 			}
 
-			var fetchErrs []string
-			fetchMetric := func(itemID string) (float64, float64, []TrendSample) {
+			var fetchErrs, missing []string
+			fetchMetric := func(name, itemID string) (float64, float64, []TrendSample) {
 				if itemID == "" {
+					missing = append(missing, name)
 					return 0, 0, nil
 				}
 				trends, err := c.FetchTrends(gctx, itemID, q.TimeFrom, q.TimeTill)
@@ -500,13 +509,17 @@ func (c *Client) GetHostStatsSummary(
 					return 0, 0, nil
 				}
 				filtered := FilterTrendSamples(trends, q.Filter)
+				if len(filtered) == 0 {
+					missing = append(missing, name)
+					return 0, 0, nil
+				}
 				avg, max := CalculateTrendMetrics(filtered, q.Peak)
 				return avg, max, filtered
 			}
 
-			cpuAvg, cpuMax, cpuTrends := fetchMetric(cpuUtilID)
-			ramAvg, ramMax, ramTrends := fetchMetric(memUtilID)
-			loadAvg, loadMax, loadTrends := fetchMetric(loadID)
+			cpuAvg, cpuMax, cpuTrends := fetchMetric("cpu", cpuUtilID)
+			ramAvg, ramMax, ramTrends := fetchMetric("ram", memUtilID)
+			loadAvg, loadMax, loadTrends := fetchMetric("load", loadID)
 
 			stat := HostStats{
 				HostID:     host.HostID,
@@ -521,6 +534,7 @@ func (c *Client) GetHostStatsSummary(
 				LoadAvg:    loadAvg,
 				LoadMax:    loadMax,
 				Error:      strings.Join(fetchErrs, "; "),
+				Missing:    missing,
 			}
 
 			mu.Lock()

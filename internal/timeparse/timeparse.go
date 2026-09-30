@@ -89,7 +89,7 @@ func Parse(s string, isEnd bool, now time.Time, loc *time.Location) (Point, erro
 			continue
 		}
 		if f.dateOnly && isEnd {
-			t = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+			t = time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, loc)
 		}
 		return absolute(t, loc), nil
 	}

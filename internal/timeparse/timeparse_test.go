@@ -72,3 +72,18 @@ func TestParseRange(t *testing.T) {
 		t.Fatal("expected start>=end error")
 	}
 }
+
+func TestParseDateOnlyEndOnDSTDay(t *testing.T) {
+	berlin, _ := time.LoadLocation("Europe/Berlin")
+	now := time.Date(2026, 11, 1, 0, 0, 0, 0, berlin)
+	for _, d := range []string{"2026-03-29", "2026-10-25"} {
+		p, err := Parse(d, true, now, berlin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := time.Unix(p.Unix, 0).In(berlin).Format("2006-01-02 15:04:05")
+		if got != d+" 23:59:59" {
+			t.Fatalf("%s end = %s, want %s 23:59:59", d, got, d)
+		}
+	}
+}

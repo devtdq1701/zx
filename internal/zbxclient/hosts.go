@@ -65,13 +65,19 @@ func (c *Client) GetDetailedHosts(ctx context.Context, target string) ([]Detaile
 	}
 
 	type rawHost struct {
-		HostID     string                                `json:"hostid"`
-		Host       string                                `json:"host"`
-		Name       string                                `json:"name"`
-		Status     string                                `json:"status"`
-		Groups     []struct{ Name string `json:"name"` } `json:"groups"`
-		HostGroups []struct{ Name string `json:"name"` } `json:"hostgroups"`
-		Interfaces []struct{ IP string `json:"ip"` }   `json:"interfaces"`
+		HostID string `json:"hostid"`
+		Host   string `json:"host"`
+		Name   string `json:"name"`
+		Status string `json:"status"`
+		Groups []struct {
+			Name string `json:"name"`
+		} `json:"groups"`
+		HostGroups []struct {
+			Name string `json:"name"`
+		} `json:"hostgroups"`
+		Interfaces []struct {
+			IP string `json:"ip"`
+		} `json:"interfaces"`
 	}
 
 	var raw []rawHost
@@ -79,15 +85,15 @@ func (c *Client) GetDetailedHosts(ctx context.Context, target string) ([]Detaile
 		return nil, fmt.Errorf("fetching hosts: %w", err)
 	}
 
-	var res []DetailedHost
+	res := []DetailedHost{}
 	for _, r := range raw {
-		var ips []string
+		ips := []string{}
 		for _, iface := range r.Interfaces {
 			if iface.IP != "" {
 				ips = append(ips, iface.IP)
 			}
 		}
-		var groups []string
+		groups := []string{}
 		src := r.Groups
 		if field == "hostgroups" && len(r.HostGroups) > 0 {
 			src = r.HostGroups
