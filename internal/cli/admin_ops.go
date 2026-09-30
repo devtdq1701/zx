@@ -663,6 +663,13 @@ var (
 			case 0:
 				medias = append(medias, entry)
 			case 1:
+				// Replacing sendto must not reset settings the user did not ask to change.
+				existing := medias[idx[0]]
+				for _, key := range []string{"active", "severity", "period"} {
+					if v, ok := existing[key]; ok && !cmd.Flags().Changed(key) {
+						entry[key] = v
+					}
+				}
 				medias[idx[0]] = entry
 			default:
 				return fmt.Errorf("user %s has %d media of type %s; refusing to guess which one to update", u.Login, len(idx), mt.Name)

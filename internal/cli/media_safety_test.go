@@ -214,3 +214,38 @@ func TestCreateTelegramYesCreatesOnce(t *testing.T) {
 		t.Fatalf("token leaked in output: %q", out)
 	}
 }
+
+func TestUpdateUserMediaKeepsUnsetFields(t *testing.T) {
+	h, cleanup := setupMock(t, mediaUserMock("7.4.14", []map[string]any{
+		{"mediatypeid": "1", "sendto": []string{"old@example.invalid"}, "active": "1", "severity": "48", "period": "1-5,08:00-17:00"},
+	}))
+	defer cleanup()
+	if _, _, err := runCLI(t, "update_user_media", "ops", "Email", "new@example.invalid", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	medias, _ := h.last("user.update")["medias"].([]any)
+	if len(medias) != 1 {
+		t.Fatalf("got %v", medias)
+	}
+	m := medias[0].(map[string]any)
+	if m["active"] != "1" || m["severity"] != "48" || m["period"] != "1-5,08:00-17:00" {
+		t.Fatalf("unset flags must keep existing values, got %v", m)
+	}
+	if s, _ := m["sendto"].([]any); len(s) != 1 || s[0] != "new@example.invalid" {
+		t.Fatalf("sendto must be replaced, got %#v", m["sendto"])
+	}
+}
+
+func TestUpdateUserMediaOverridesExplicitFields(t *testing.T) {
+	h, cleanup := setupMock(t, mediaUserMock("7.4.14", []map[string]any{
+		{"mediatypeid": "1", "sendto": []string{"old@example.invalid"}, "active": "1", "severity": "48", "period": "1-5,08:00-17:00"},
+	}))
+	defer cleanup()
+	if _, _, err := runCLI(t, "update_user_media", "ops", "Email", "new@example.invalid", "--severity", "12", "--active=true", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	m := h.last("user.update")["medias"].([]any)[0].(map[string]any)
+	if m["active"] != "0" || m["severity"] != float64(12) || m["period"] != "1-5,08:00-17:00" {
+		t.Fatalf("explicit flags must override only themselves, got %v", m)
+	}
+}
