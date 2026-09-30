@@ -506,3 +506,37 @@ func TestRemoveMaintenanceNumericIDVerified(t *testing.T) {
 		t.Fatalf("maintenance.delete sent %d times", n)
 	}
 }
+
+func TestShowLastValuesRejectsLocalTimezone(t *testing.T) {
+	h, cleanup := setupMockClient(t, map[string]any{
+		"host.get": []map[string]any{{"hostid": "1", "host": "h1", "name": "h1"}},
+		"item.get": []map[string]any{{"itemid": "9", "key_": "k", "lastvalue": "1", "lastclock": "1700000000"}},
+	})
+	defer cleanup()
+	_, _, err := runCLI(t, "--timezone", "Local", "show_last_values", "h1")
+	if err == nil || !strings.Contains(err.Error(), "timezone") {
+		t.Fatalf("want timezone error, got %v", err)
+	}
+	if n := h.count("item.get"); n != 0 {
+		t.Fatalf("timezone must be validated before querying, got %d item.get", n)
+	}
+}
+
+func TestRuntimeErrorsSkipUsageButArgErrorsShowIt(t *testing.T) {
+	_, cleanup := setupMockClient(t, map[string]any{})
+	defer cleanup()
+	// cobra prints usage to the configured out writer, so check both streams.
+	run := func(args ...string) (string, error) {
+		out, errOut, err := runCLI(t, args...)
+		return out + errOut, err
+	}
+	if got, err := run("show_last_values", "zz_no_such_host"); err == nil || strings.Contains(got, "Usage:") {
+		t.Fatalf("runtime error must not dump usage, got %q (%v)", got, err)
+	}
+	if got, err := run("show_last_values"); err == nil || !strings.Contains(got, "Usage:") {
+		t.Fatalf("arg error must show usage, got %q (%v)", got, err)
+	}
+	if got, err := run("show_last_values", "h1", "--no-such-flag"); err == nil || !strings.Contains(got, "Usage:") {
+		t.Fatalf("flag error must show usage, got %q (%v)", got, err)
+	}
+}

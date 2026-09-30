@@ -391,6 +391,10 @@ var showLastValuesCmd = &cobra.Command{
 	Short: "Show latest collected values for items on a host",
 	Args:  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		loc, err := Location()
+		if err != nil {
+			return err
+		}
 		client, _, _, err := GetActiveClient()
 		if err != nil {
 			return err
@@ -438,10 +442,6 @@ var showLastValuesCmd = &cobra.Command{
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
 		fmt.Fprintln(tw, "ITEMID\tKEY\tLAST VALUE\tLAST CLOCK")
 		fmt.Fprintln(tw, strings.Repeat("-", 80))
-		loc, _ := Location()
-		if loc == nil {
-			loc = time.Local
-		}
 		for _, it := range filtered {
 			cSec, _ := strconv.ParseInt(it.LastClock, 10, 64)
 			cTime := "-"

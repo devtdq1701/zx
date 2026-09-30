@@ -31,6 +31,10 @@ var (
 			if err := validateFormat(); err != nil {
 				return err
 			}
+			// Flags and args are valid by now (cobra validates them before
+			// this hook), so later errors are runtime errors: print the error
+			// without the full usage text. executeLine resets this per line.
+			cmd.Root().SilenceUsage = true
 			// Re-resolve the client on every execution so a REPL line always
 			// talks to the profile selected for that line.
 			activeClient, activeProf, activeName = nil, nil, ""

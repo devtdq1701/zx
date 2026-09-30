@@ -36,6 +36,7 @@ func resetFlags(cmd *cobra.Command) {
 func executeLine(ctx context.Context, args []string) error {
 	resetFlags(rootCmd)
 	rootCmd.SilenceErrors = false
+	rootCmd.SilenceUsage = false
 	rootCmd.SetArgs(args)
 	return rootCmd.ExecuteContext(ctx)
 }
