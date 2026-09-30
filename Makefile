@@ -13,7 +13,7 @@ build:
 test:
 	go test -v ./...
 
-parity: build
+parity:
 	bash scripts/test_parity.sh
 
 clean:

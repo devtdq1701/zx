@@ -4,19 +4,26 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 PY_CLI="/home/quangtd/Workspace/VNPT/EOF/zabbix-cli/.venv/bin/zabbix-cli"
-ZX_CLI="$REPO_DIR/bin/zx"
+# Always test a fresh build of the working tree, never bin/zx (user WIP).
+BUILD_DIR=$(mktemp -d)
+trap 'rm -rf "$BUILD_DIR"' EXIT
+if [[ -z "${ZX_CLI:-}" ]]; then
+    ZX_CLI="$BUILD_DIR/zx"
+    (cd "$REPO_DIR" && CGO_ENABLED=0 go build \
+        -ldflags="-s -w -X zx/internal/cli.Version=parity-$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+        -o "$ZX_CLI" ./cmd/zx)
+fi
 PROFILE="${PROFILE:-central}"
 TARGETS="${TARGETS:-10.165.67.61,10.165.67.62}"
 
 echo "=== ZABBIX-CLI PARITY TEST (Python vs Golang zx) ==="
 
-if [[ ! -x "$ZX_CLI" ]]; then
-    echo "Building zx binary..."
-    (cd "$REPO_DIR" && go build -ldflags="-s -w" -o bin/zx ./cmd/zx)
-fi
-
-echo "[1/4] Testing preflight connectivity on profile '$PROFILE'..."
-$ZX_CLI --profile "$PROFILE" preflight
+echo "[1/4] Preflight contract on profile '$PROFILE'..."
+for cli in "$PY_CLI" "$ZX_CLI"; do
+    out=$("$cli" --profile "$PROFILE" preflight 2>&1) || { echo "preflight FAILED ($cli): $out"; exit 1; }
+    [[ "$out" == PASS* ]] || { echo "preflight output must start with PASS ($cli): $out"; exit 1; }
+    echo "$out"
+done
 
 echo "[2/4] Comparing show_host_stats outputs..."
 echo "--- Python zabbix-cli output ---"
@@ -54,7 +61,7 @@ $PY_CLI --profile "$PROFILE" --format json export_window --from "$FROM" --to "$T
   --timezone Asia/Ho_Chi_Minh --role app --input-file "$WORK/hosts.txt" > "$WORK/py.json"
 $ZX_CLI --profile "$PROFILE" --format json export_window --from "$FROM" --to "$TO" \
   --timezone Asia/Ho_Chi_Minh --role app --input-file "$WORK/hosts.txt" > "$WORK/zx.json"
-python3 "$SCRIPT_DIR/parity_export_window.py" "$WORK/py.json" "$WORK/zx.json"
+python3 "$SCRIPT_DIR/parity_export_window.py" "$WORK/py.json" "$WORK/zx.json" || { rm -rf "$WORK"; exit 1; }
 rm -rf "$WORK"
 
 echo "=== PARITY VERIFICATION COMPLETED SUCCESSFULLY ==="
