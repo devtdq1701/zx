@@ -68,7 +68,7 @@ func NewClient(p *config.Profile, timeout time.Duration) *Client {
 }
 
 func (c *Client) Preflight(ctx context.Context) (int, time.Duration, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.profile.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.rpcURL, nil)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -83,6 +83,9 @@ func (c *Client) Preflight(ctx context.Context) (int, time.Duration, error) {
 
 	return resp.StatusCode, duration, nil
 }
+
+// RPCURL returns the JSON-RPC endpoint this client posts to.
+func (c *Client) RPCURL() string { return c.rpcURL }
 
 func (c *Client) nextID() int {
 	c.reqIDMu.Lock()
