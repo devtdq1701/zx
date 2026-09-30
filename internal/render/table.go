@@ -62,3 +62,40 @@ func RenderStatsTable(w io.Writer, stats []zbxclient.HostStats, peak *zbxclient.
 	}
 	fmt.Fprintln(w, "")
 }
+
+type MetricSummaryRow struct {
+	Host    string  `json:"host"`
+	IP      string  `json:"ip"`
+	Min     float64 `json:"min"`
+	Avg     float64 `json:"avg"`
+	Max     float64 `json:"max"`
+	Samples int     `json:"samples"`
+	Error   string  `json:"error,omitempty"`
+}
+
+func RenderMetricSummary(w io.Writer, title string, rows []MetricSummaryRow) {
+	if w == nil {
+		w = os.Stdout
+	}
+	fmt.Fprintln(w, "")
+	if title != "" {
+		fmt.Fprintf(w, "=== %s ===\n\n", title)
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(tw, "IP\tHOST\tMIN\tAVG\tMAX\tSAMPLES")
+	fmt.Fprintln(tw, strings.Repeat("-", 70))
+	var failedCount int
+	for _, r := range rows {
+		if r.Error != "" {
+			failedCount++
+			fmt.Fprintf(tw, "%s\t%s\tERROR: %s\t\t\t\n", r.IP, r.Host, r.Error)
+			continue
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%.2f\t%.2f\t%.2f\t%d\n", r.IP, r.Host, r.Min, r.Avg, r.Max, r.Samples)
+	}
+	_ = tw.Flush()
+	if failedCount > 0 {
+		fmt.Fprintf(os.Stderr, "WARNING: %d host(s) failed\n", failedCount)
+	}
+	fmt.Fprintln(w, "")
+}
