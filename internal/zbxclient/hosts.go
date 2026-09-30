@@ -12,8 +12,19 @@ type DetailedHost struct {
 	Host       string   `json:"host"`
 	Name       string   `json:"name"`
 	Status     string   `json:"status"` // "0" = Monitored, "1" = Unmonitored
-	IPs        []string `json:"-"`
-	Hostgroups []string `json:"-"`
+	IPs        []string `json:"ips"`
+	Hostgroups []string `json:"hostgroups"`
+}
+
+func hostGroupsParam(version string) (string, string) {
+	var major, minor int
+	if _, err := fmt.Sscanf(version, "%d.%d", &major, &minor); err != nil {
+		return "selectHostGroups", "hostgroups"
+	}
+	if major > 6 || (major == 6 && minor >= 2) {
+		return "selectHostGroups", "hostgroups"
+	}
+	return "selectGroups", "groups"
 }
 
 func (c *Client) GetDetailedHosts(ctx context.Context, target string) ([]DetailedHost, error) {
@@ -33,9 +44,12 @@ func (c *Client) GetDetailedHosts(ctx context.Context, target string) ([]Detaile
 		}
 	}
 
+	v, _ := c.APIVersion(ctx)
+	param, field := hostGroupsParam(v)
+
 	params := map[string]any{
-		"output":         []string{"hostid", "host", "name", "status"},
-		"selectGroups":   []string{"name"},
+		"output":           []string{"hostid", "host", "name", "status"},
+		param:              []string{"name"},
 		"selectInterfaces": []string{"ip", "main"},
 	}
 
@@ -51,12 +65,13 @@ func (c *Client) GetDetailedHosts(ctx context.Context, target string) ([]Detaile
 	}
 
 	type rawHost struct {
-		HostID     string `json:"hostid"`
-		Host       string `json:"host"`
-		Name       string `json:"name"`
-		Status     string `json:"status"`
+		HostID     string                                `json:"hostid"`
+		Host       string                                `json:"host"`
+		Name       string                                `json:"name"`
+		Status     string                                `json:"status"`
 		Groups     []struct{ Name string `json:"name"` } `json:"groups"`
-		Interfaces []struct{ IP string `json:"ip"` } `json:"interfaces"`
+		HostGroups []struct{ Name string `json:"name"` } `json:"hostgroups"`
+		Interfaces []struct{ IP string `json:"ip"` }   `json:"interfaces"`
 	}
 
 	var raw []rawHost
@@ -73,7 +88,13 @@ func (c *Client) GetDetailedHosts(ctx context.Context, target string) ([]Detaile
 			}
 		}
 		var groups []string
-		for _, g := range r.Groups {
+		src := r.Groups
+		if field == "hostgroups" && len(r.HostGroups) > 0 {
+			src = r.HostGroups
+		} else if len(src) == 0 {
+			src = r.HostGroups
+		}
+		for _, g := range src {
 			if g.Name != "" {
 				groups = append(groups, g.Name)
 			}

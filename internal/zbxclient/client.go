@@ -38,6 +38,7 @@ type Client struct {
 	rpcURL     string
 	auth       string
 	authMu     sync.RWMutex
+	apiVersion string
 	isBearer   bool
 	reqID      int
 	reqIDMu    sync.Mutex
@@ -192,7 +193,7 @@ func (c *Client) rawCall(ctx context.Context, method string, params any, auth st
 	}
 
 	// Legacy auth parameter in body for Zabbix 5.x
-	if auth != "" && !c.isBearer && c.profile.Token == "" {
+	if auth != "" && !c.isBearer && c.profile.Token == "" && method != "apiinfo.version" {
 		reqBody.Auth = auth
 	}
 
@@ -210,7 +211,7 @@ func (c *Client) rawCall(ctx context.Context, method string, params any, auth st
 	// Set Authorization header for static token or Zabbix 7.0+ bearer mode
 	if c.profile.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.profile.Token)
-	} else if auth != "" && c.isBearer {
+	} else if auth != "" && c.isBearer && method != "apiinfo.version" {
 		req.Header.Set("Authorization", "Bearer "+auth)
 	}
 
@@ -245,4 +246,24 @@ func (c *Client) rawCall(ctx context.Context, method string, params any, auth st
 	}
 
 	return nil
+}
+
+// APIVersion returns the cached Zabbix API version from apiinfo.version.
+func (c *Client) APIVersion(ctx context.Context) (string, error) {
+	c.authMu.RLock()
+	if c.apiVersion != "" {
+		v := c.apiVersion
+		c.authMu.RUnlock()
+		return v, nil
+	}
+	c.authMu.RUnlock()
+
+	var v string
+	if err := c.Call(ctx, "apiinfo.version", map[string]any{}, &v); err != nil {
+		return "", err
+	}
+	c.authMu.Lock()
+	c.apiVersion = v
+	c.authMu.Unlock()
+	return v, nil
 }

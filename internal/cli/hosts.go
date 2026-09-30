@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -28,7 +27,11 @@ var showHostsCmd = &cobra.Command{
 			return err
 		}
 
-		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+		if OutputFormat() == "json" {
+			return writeJSON(cmd.OutOrStdout(), hosts)
+		}
+
+		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
 		fmt.Fprintln(tw, "HOSTID\tIP\tNAME\tSTATUS\tHOSTGROUPS")
 		fmt.Fprintln(tw, strings.Repeat("-", 90))
 
