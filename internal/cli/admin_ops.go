@@ -607,90 +607,54 @@ var (
 		Short: "Update user notification media configuration",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if updMediaSeverity < 0 || updMediaSeverity > 63 {
+				return fmt.Errorf("invalid --severity %d; expected a bitmask 0..63", updMediaSeverity)
+			}
 			client, _, _, err := GetActiveClient()
 			if err != nil {
 				return err
 			}
-			username := args[0]
-			mediaTypeName := args[1]
-			sendTo := args[2]
-
-			// Resolve user
-			var users []struct {
-				UserID string `json:"userid"`
-				Alias  string `json:"alias"`
+			ctx := cmd.Context()
+			u, err := client.ResolveExactUser(ctx, args[0])
+			if err != nil {
+				return err
 			}
-			err = client.Call(cmd.Context(), "user.get", map[string]any{
-				"filter": map[string]string{"alias": username},
-				"output": []string{"userid", "alias"},
-			}, &users)
-			if err != nil || len(users) == 0 {
-				// try username for Zabbix 6.0+
-				_ = client.Call(cmd.Context(), "user.get", map[string]any{
-					"filter": map[string]string{"username": username},
-					"output": []string{"userid", "username"},
-				}, &users)
+			mt, err := client.ResolveExactMediaType(ctx, args[1])
+			if err != nil {
+				return err
 			}
-			if len(users) == 0 {
-				return fmt.Errorf("user not found: %s", username)
+			raw, err := client.GetUserMediasRaw(ctx, u.UserID)
+			if err != nil {
+				return err
 			}
-			userID := users[0].UserID
-
-			// Resolve mediatype
-			var mediaTypes []zbxclient.MediaTypeRecord
-			err = client.Call(cmd.Context(), "mediatype.get", map[string]any{
-				"filter": map[string]string{"name": mediaTypeName},
-				"output": []string{"mediatypeid", "name"},
-			}, &mediaTypes)
-			if err != nil || len(mediaTypes) == 0 {
-				return fmt.Errorf("mediatype not found: %s", mediaTypeName)
-			}
-			mediaTypeID := mediaTypes[0].MediaTypeID
-
-			// Get existing user medias
-			existing, _ := client.GetUserMedia(cmd.Context(), username)
-			var updatedMedias []map[string]any
-			found := false
-			activeVal := 0
+			medias := zbxclient.EditableMedias(raw)
+			active := "0"
 			if !updMediaActive {
-				activeVal = 1
+				active = "1"
 			}
-
-			for _, m := range existing {
-				if m.MediaTypeID == mediaTypeID {
-					found = true
-					updatedMedias = append(updatedMedias, map[string]any{
-						"mediatypeid": mediaTypeID,
-						"sendto":      sendTo,
-						"active":      activeVal,
-						"severity":    updMediaSeverity,
-						"period":      updMediaPeriod,
-					})
-				} else {
-					updatedMedias = append(updatedMedias, map[string]any{
-						"mediatypeid": m.MediaTypeID,
-						"sendto":      m.SendTo,
-						"active":      m.Active,
-						"severity":    m.Severity,
-						"period":      m.Period,
-					})
+			entry := map[string]any{
+				"mediatypeid": mt.MediaTypeID,
+				"sendto":      zbxclient.SendToValue(mt, args[2]),
+				"active":      active,
+				"severity":    updMediaSeverity,
+				"period":      updMediaPeriod,
+			}
+			var idx []int
+			for i, m := range medias {
+				if fmt.Sprint(m["mediatypeid"]) == mt.MediaTypeID {
+					idx = append(idx, i)
 				}
 			}
-			if !found {
-				updatedMedias = append(updatedMedias, map[string]any{
-					"mediatypeid": mediaTypeID,
-					"sendto":      sendTo,
-					"active":      activeVal,
-					"severity":    updMediaSeverity,
-					"period":      updMediaPeriod,
-				})
+			switch len(idx) {
+			case 0:
+				medias = append(medias, entry)
+			case 1:
+				medias[idx[0]] = entry
+			default:
+				return fmt.Errorf("user %s has %d media of type %s; refusing to guess which one to update", u.Login, len(idx), mt.Name)
 			}
-
-			params := map[string]any{
-				"userid":      userID,
-				"user_medias": updatedMedias,
-			}
-			return runMutation(cmd, "user.update", params, updMediaYes, fmt.Sprintf("Updated media for user %s.", username))
+			params := map[string]any{"userid": u.UserID, "medias": medias}
+			return runMutation(cmd, "user.update", params, updMediaYes, fmt.Sprintf("Updated %s media for user %s.", mt.Name, u.Login))
 		},
 	}
 )
