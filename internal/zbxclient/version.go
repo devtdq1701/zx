@@ -22,5 +22,9 @@ func (c *Client) APIAtLeast(ctx context.Context, major, minor int) (bool, error)
 	if err != nil {
 		return false, fmt.Errorf("apiinfo.version: %w", err)
 	}
+	var ma, mi int
+	if _, err := fmt.Sscanf(v, "%d.%d", &ma, &mi); err != nil {
+		return false, fmt.Errorf("unrecognised Zabbix API version %q; refusing to guess API parameters", v)
+	}
 	return VersionAtLeast(v, major, minor), nil
 }
