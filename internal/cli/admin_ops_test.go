@@ -123,6 +123,7 @@ func TestAdminOpsHostAndGroup(t *testing.T) {
 	_, cleanup := setupMockClient(t, map[string]any{
 		"apiinfo.version":      "7.0.0",
 		"host.get":             []map[string]any{{"hostid": "100", "host": "srv1"}},
+		"hostgroup.get":        []map[string]any{{"groupid": "2", "name": "Linux servers"}},
 		"host.update":          map[string]any{"hostids": []string{"100"}},
 		"hostgroup.massadd":    map[string]any{"groupids": []string{"2"}},
 		"hostgroup.massremove": map[string]any{"groupids": []string{"2"}},
@@ -247,5 +248,23 @@ func TestAdminOpsReadOnly(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "zabbix_export") {
 		t.Errorf("expected zabbix_export in export_configuration output, got: %s", buf.String())
+	}
+}
+
+func TestMutationRefusesAmbiguousOrPatternHost(t *testing.T) {
+	h, cleanup := setupMockClient(t, map[string]any{
+		"apiinfo.version": "7.4.0",
+		"host.get": []map[string]any{
+			{"hostid": "111", "host": "eofhni1", "name": "eofhni1"},
+			{"hostid": "222", "host": "eofhni10", "name": "eofhni10"},
+		},
+	})
+	defer cleanup()
+	_, _, err := runCLI(t, "monitor_host", "eofhni", "--status", "unmonitored", "--yes")
+	if err == nil || !strings.Contains(err.Error(), "host not found: eofhni") {
+		t.Fatalf("expected host not found, got %v", err)
+	}
+	if h.count("host.update") != 0 {
+		t.Fatal("host.update must not be sent for an unresolved host")
 	}
 }

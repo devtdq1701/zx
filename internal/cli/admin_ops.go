@@ -38,14 +38,8 @@ func resolveSingleHostID(cmd *cobra.Command, target string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	hosts, err := client.GetDetailedHosts(cmd.Context(), target)
-	if err != nil {
-		return "", err
-	}
-	if len(hosts) == 0 {
-		return "", fmt.Errorf("host not found: %s", target)
-	}
-	return hosts[0].HostID, nil
+	h, err := client.ResolveExactHost(cmd.Context(), target)
+	return h.HostID, err
 }
 
 func resolveSingleGroupID(cmd *cobra.Command, nameOrID string) (string, error) {
@@ -53,24 +47,8 @@ func resolveSingleGroupID(cmd *cobra.Command, nameOrID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := strconv.Atoi(nameOrID); err == nil {
-		return nameOrID, nil
-	}
-	var groups []struct {
-		GroupID string `json:"groupid"`
-		Name    string `json:"name"`
-	}
-	err = client.Call(cmd.Context(), "hostgroup.get", map[string]any{
-		"filter": map[string]string{"name": nameOrID},
-		"output": []string{"groupid", "name"},
-	}, &groups)
-	if err != nil {
-		return "", err
-	}
-	if len(groups) == 0 {
-		return "", fmt.Errorf("hostgroup not found: %s", nameOrID)
-	}
-	return groups[0].GroupID, nil
+	g, err := client.ResolveExactGroup(cmd.Context(), nameOrID)
+	return g.GroupID, err
 }
 
 func resolveSingleTemplateID(cmd *cobra.Command, nameOrID string) (string, error) {
@@ -78,35 +56,18 @@ func resolveSingleTemplateID(cmd *cobra.Command, nameOrID string) (string, error
 	if err != nil {
 		return "", err
 	}
-	if _, err := strconv.Atoi(nameOrID); err == nil {
-		return nameOrID, nil
-	}
-	var templates []struct {
-		TemplateID string `json:"templateid"`
-		Host       string `json:"host"`
-		Name       string `json:"name"`
-	}
-	err = client.Call(cmd.Context(), "template.get", map[string]any{
-		"filter": map[string]string{"host": nameOrID},
-		"output": []string{"templateid", "host", "name"},
-	}, &templates)
-	if err != nil {
-		return "", err
-	}
-	if len(templates) == 0 {
-		return "", fmt.Errorf("template not found: %s", nameOrID)
-	}
-	return templates[0].TemplateID, nil
+	tp, err := client.ResolveExactTemplate(cmd.Context(), nameOrID)
+	return tp.TemplateID, err
 }
 
 // 1. create_maintenance_definition
 var (
-	maintDesc       string
-	maintHosts      string
-	maintGroups     string
-	maintPeriod     string
-	maintDataColl   string
-	maintYes        bool
+	maintDesc      string
+	maintHosts     string
+	maintGroups    string
+	maintPeriod    string
+	maintDataColl  string
+	maintYes       bool
 	createMaintCmd = &cobra.Command{
 		Use:   "create_maintenance_definition [NAME]",
 		Short: "Create a one-time maintenance definition",
@@ -312,11 +273,11 @@ var (
 				return err
 			}
 			params := map[string]any{
-				"output":              []string{"eventid", "name", "severity", "clock", "acknowledged"},
-				"selectAcknowledged":  "extend",
-				"recent":              "true",
-				"sortfield":           []string{"eventid"},
-				"sortorder":           "DESC",
+				"output":             []string{"eventid", "name", "severity", "clock", "acknowledged"},
+				"selectAcknowledged": "extend",
+				"recent":             "true",
+				"sortfield":          []string{"eventid"},
+				"sortorder":          "DESC",
 			}
 			if alarmUnack {
 				params["acknowledged"] = false
@@ -421,8 +382,8 @@ var showLastValuesCmd = &cobra.Command{
 		}
 		var items []ItemVal
 		err = client.Call(cmd.Context(), "item.get", map[string]any{
-			"hostids": []string{hid},
-			"output":  []string{"itemid", "name", "key_", "lastvalue", "lastclock", "units"},
+			"hostids":   []string{hid},
+			"output":    []string{"itemid", "name", "key_", "lastvalue", "lastclock", "units"},
 			"monitored": true,
 		}, &items)
 		if err != nil {
@@ -466,8 +427,8 @@ var showLastValuesCmd = &cobra.Command{
 
 // 7. monitor_host
 var (
-	monitorStatus string
-	monitorYes    bool
+	monitorStatus  string
+	monitorYes     bool
 	monitorHostCmd = &cobra.Command{
 		Use:   "monitor_host [TARGET]",
 		Short: "Enable or disable monitoring for a host",
@@ -496,7 +457,7 @@ var (
 
 // 8. add_host_to_hostgroup
 var (
-	addHostGroupYes bool
+	addHostGroupYes   bool
 	addHostToGroupCmd = &cobra.Command{
 		Use:   "add_host_to_hostgroup [TARGET] [HOSTGROUP]",
 		Short: "Add a host to a hostgroup",
@@ -521,7 +482,7 @@ var (
 
 // 9. remove_host_from_hostgroup
 var (
-	remHostGroupYes bool
+	remHostGroupYes     bool
 	remHostFromGroupCmd = &cobra.Command{
 		Use:   "remove_host_from_hostgroup [TARGET] [HOSTGROUP]",
 		Short: "Remove a host from a hostgroup",
@@ -546,7 +507,7 @@ var (
 
 // 10. link_template_to_host
 var (
-	linkTmplYes bool
+	linkTmplYes     bool
 	linkTemplateCmd = &cobra.Command{
 		Use:   "link_template_to_host [TARGET] [TEMPLATE]",
 		Short: "Link a template to a host",
@@ -571,8 +532,8 @@ var (
 
 // 11. unlink_template_from_host
 var (
-	unlinkClear bool
-	unlinkYes   bool
+	unlinkClear       bool
+	unlinkYes         bool
 	unlinkTemplateCmd = &cobra.Command{
 		Use:   "unlink_template_from_host [TARGET] [TEMPLATE]",
 		Short: "Unlink a template from a host (optional --clear)",
@@ -601,10 +562,10 @@ var (
 
 // 12. update_user_media
 var (
-	updMediaPeriod   string
-	updMediaSeverity int
-	updMediaActive   bool
-	updMediaYes      bool
+	updMediaPeriod     string
+	updMediaSeverity   int
+	updMediaActive     bool
+	updMediaYes        bool
 	updateUserMediaCmd = &cobra.Command{
 		Use:   "update_user_media [USERNAME] [MEDIATYPE] [SENDTO]",
 		Short: "Update user notification media configuration",
@@ -690,7 +651,7 @@ var (
 			}
 
 			params := map[string]any{
-				"userid":     userID,
+				"userid":      userID,
 				"user_medias": updatedMedias,
 			}
 			return runMutation(cmd, "user.update", params, updMediaYes, fmt.Sprintf("Updated media for user %s.", username))
@@ -700,9 +661,9 @@ var (
 
 // 13. define_host_macro
 var (
-	hostMacroDesc string
-	hostMacroType int
-	hostMacroYes  bool
+	hostMacroDesc      string
+	hostMacroType      int
+	hostMacroYes       bool
 	defineHostMacroCmd = &cobra.Command{
 		Use:   "define_host_macro [TARGET] [MACRO] [VALUE]",
 		Short: "Define or update a host macro ({$MACRO})",
@@ -756,9 +717,9 @@ var (
 
 // 14. define_global_macro
 var (
-	globalMacroDesc string
-	globalMacroType int
-	globalMacroYes  bool
+	globalMacroDesc      string
+	globalMacroType      int
+	globalMacroYes       bool
 	defineGlobalMacroCmd = &cobra.Command{
 		Use:   "define_global_macro [MACRO] [VALUE]",
 		Short: "Define or update a global macro ({$MACRO})",
