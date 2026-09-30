@@ -90,6 +90,7 @@ var mediaUserCmd = &cobra.Command{
 var (
 	tgParseMode string
 	tgDryRun    bool
+	tgYes       bool
 )
 
 var createTelegramCmd = &cobra.Command{
@@ -103,17 +104,20 @@ var createTelegramCmd = &cobra.Command{
 			return err
 		}
 
-		res, err := client.CreateTelegramMediaType(cmd.Context(), args[0], args[1], tgParseMode, tgDryRun)
+		// --dryrun is kept only so old scripts can never turn into writes.
+		dryRun := tgDryRun || !tgYes
+		res, err := client.CreateTelegramMediaType(cmd.Context(), args[0], args[1], tgParseMode, dryRun)
 		if err != nil {
 			return err
 		}
 
-		if tgDryRun {
-			fmt.Println("! [DRY-RUN] Would create Telegram media type:")
+		out := cmd.OutOrStdout()
+		if dryRun {
+			fmt.Fprintln(out, "! [DRY-RUN] Would create Telegram media type (rerun with --yes to apply):")
 		} else {
-			fmt.Println("Successfully created Telegram media type:")
+			fmt.Fprintln(out, "Successfully created Telegram media type:")
 		}
-		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+		tw := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
 		fmt.Fprintln(tw, "ID\tNAME\tTYPE\tSTATUS\tDETAILS")
 		fmt.Fprintln(tw, strings.Repeat("-", 80))
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", res.MediaTypeID, res.Name, res.Type, res.Status, res.Description)
@@ -129,6 +133,7 @@ var (
 	userMediaSeverity  int
 	userMediaEnabled   bool
 	userMediaDryRun    bool
+	userMediaYes       bool
 )
 
 var addUserMediaCmd = &cobra.Command{
@@ -146,17 +151,19 @@ var addUserMediaCmd = &cobra.Command{
 			return err
 		}
 
-		medias, err := client.AddUserMedia(cmd.Context(), args[0], userMediaMediaType, userMediaSendTo, userMediaPeriod, userMediaSeverity, userMediaEnabled, userMediaDryRun)
+		dryRun := userMediaDryRun || !userMediaYes
+		medias, err := client.AddUserMedia(cmd.Context(), args[0], userMediaMediaType, userMediaSendTo, userMediaPeriod, userMediaSeverity, userMediaEnabled, dryRun)
 		if err != nil {
 			return err
 		}
 
-		if userMediaDryRun {
-			fmt.Println("! [DRY-RUN] Would add user media:")
+		out := cmd.OutOrStdout()
+		if dryRun {
+			fmt.Fprintln(out, "! [DRY-RUN] Would add user media (rerun with --yes to apply):")
 		} else {
-			fmt.Println("Successfully updated user media channels:")
+			fmt.Fprintln(out, "Successfully updated user media channels:")
 		}
-		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+		tw := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
 		fmt.Fprintf(tw, "MEDIA ID\tTYPE NAME\tSEND TO / RECIPIENT\tSTATUS\tPERIOD\n")
 		fmt.Fprintln(tw, strings.Repeat("-", 80))
 
@@ -174,14 +181,18 @@ var addUserMediaCmd = &cobra.Command{
 
 func init() {
 	createTelegramCmd.Flags().StringVar(&tgParseMode, "parse-mode", "", "Telegram parse mode")
+	createTelegramCmd.Flags().BoolVar(&tgYes, "yes", false, "Confirm execution (bypasses dry-run)")
 	createTelegramCmd.Flags().BoolVar(&tgDryRun, "dryrun", false, "Preview without writing")
+	_ = createTelegramCmd.Flags().MarkDeprecated("dryrun", "preview is now the default; use --yes to apply")
 
 	addUserMediaCmd.Flags().StringVar(&userMediaMediaType, "mediatype", "", "Media type name or ID")
 	addUserMediaCmd.Flags().StringVar(&userMediaSendTo, "sendto", "", "Recipient / chat ID")
 	addUserMediaCmd.Flags().StringVar(&userMediaPeriod, "period", "1-7,00:00-24:00", "Zabbix active period")
 	addUserMediaCmd.Flags().IntVar(&userMediaSeverity, "severity", 63, "Severity bitmask (default 63 = all)")
 	addUserMediaCmd.Flags().BoolVar(&userMediaEnabled, "enabled", true, "Enable or disable media")
+	addUserMediaCmd.Flags().BoolVar(&userMediaYes, "yes", false, "Confirm execution (bypasses dry-run)")
 	addUserMediaCmd.Flags().BoolVar(&userMediaDryRun, "dryrun", false, "Preview without writing")
+	_ = addUserMediaCmd.Flags().MarkDeprecated("dryrun", "preview is now the default; use --yes to apply")
 
 	mediaCmd.AddCommand(mediaUserCmd)
 	mediaCmd.AddCommand(createTelegramCmd)

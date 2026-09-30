@@ -118,3 +118,99 @@ func TestUpdateUserMediaSeverityRange(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestAddUserMediaDefaultsToDryRun(t *testing.T) {
+	h, cleanup := setupMock(t, mediaUserMock("7.4.14", []map[string]any{}))
+	defer cleanup()
+	out, _, err := runCLI(t, "add_user_media", "ops", "--mediatype", "Email", "--sendto", "x@example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "DRY-RUN") {
+		t.Fatalf("expected dry-run preview, got %q", out)
+	}
+	if n := h.count("user.update"); n != 0 {
+		t.Fatalf("default must not write, got %d user.update", n)
+	}
+}
+
+func TestAddUserMediaDeprecatedDryrunStillPreviews(t *testing.T) {
+	h, cleanup := setupMock(t, mediaUserMock("7.4.14", []map[string]any{}))
+	defer cleanup()
+	if _, _, err := runCLI(t, "add_user_media", "ops", "--mediatype", "Email", "--sendto", "x@example.invalid", "--dryrun", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.count("user.update"); n != 0 {
+		t.Fatalf("--dryrun must never write, got %d user.update", n)
+	}
+}
+
+func TestAddUserMediaYesWritesOnce(t *testing.T) {
+	h, cleanup := setupMock(t, mediaUserMock("7.4.14", []map[string]any{}))
+	defer cleanup()
+	if _, _, err := runCLI(t, "add_user_media", "ops", "--mediatype", "Email", "--sendto", "x@example.invalid", "--severity", "0", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.count("user.update"); n != 1 {
+		t.Fatalf("want one user.update, got %d", n)
+	}
+	medias, _ := h.last("user.update")["medias"].([]any)
+	if len(medias) != 1 || medias[0].(map[string]any)["severity"] != float64(0) {
+		t.Fatalf("explicit --severity 0 must be kept, got %v", medias)
+	}
+}
+
+func TestAddUserMediaSeverityRange(t *testing.T) {
+	for _, sev := range []string{"64", "-1"} {
+		h, cleanup := setupMock(t, mediaUserMock("7.4.14", []map[string]any{}))
+		_, _, err := runCLI(t, "add_user_media", "ops", "--mediatype", "Email", "--sendto", "x@example.invalid", "--severity", sev, "--yes")
+		if err == nil || !strings.Contains(err.Error(), "severity") {
+			t.Fatalf("%s: got %v", sev, err)
+		}
+		if n := h.count("user.update"); n != 0 {
+			t.Fatalf("%s: user.update sent", sev)
+		}
+		cleanup()
+	}
+}
+
+func telegramMock() *rpcHandler {
+	return &rpcHandler{resps: map[string]any{
+		"mediatype.get": []map[string]any{{"mediatypeid": "4", "name": "Telegram", "type": "4",
+			"parameters": []map[string]any{{"name": "api_token", "value": ""}}}},
+		"mediatype.create": map[string]any{"mediatypeids": []string{"99"}},
+	}}
+}
+
+func TestCreateTelegramDefaultsToDryRunAndMasksToken(t *testing.T) {
+	h, cleanup := setupMock(t, telegramMock())
+	defer cleanup()
+	out, _, err := runCLI(t, "create_telegram_mediatype", "zz_tg", "000000000:FAKESECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "DRY-RUN") {
+		t.Fatalf("expected dry-run preview, got %q", out)
+	}
+	if strings.Contains(out, "FAKESECRET") {
+		t.Fatalf("token leaked in preview: %q", out)
+	}
+	if n := h.count("mediatype.create"); n != 0 {
+		t.Fatalf("default must not create, got %d", n)
+	}
+}
+
+func TestCreateTelegramYesCreatesOnce(t *testing.T) {
+	h, cleanup := setupMock(t, telegramMock())
+	defer cleanup()
+	out, _, err := runCLI(t, "create_telegram_mediatype", "zz_tg", "000000000:FAKESECRET", "--yes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := h.count("mediatype.create"); n != 1 {
+		t.Fatalf("want one mediatype.create, got %d", n)
+	}
+	if strings.Contains(out, "FAKESECRET") {
+		t.Fatalf("token leaked in output: %q", out)
+	}
+}

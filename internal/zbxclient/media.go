@@ -133,6 +133,9 @@ func (c *Client) CreateTelegramMediaType(ctx context.Context, name, token, parse
 }
 
 func (c *Client) AddUserMedia(ctx context.Context, usernameOrID, mediatypeNameOrID, sendTo, period string, severity int, enabled, dryRun bool) ([]UserMediaRecord, error) {
+	if severity < 0 || severity > 63 {
+		return nil, fmt.Errorf("invalid severity %d; expected a bitmask 0..63", severity)
+	}
 	u, err := c.ResolveExactUser(ctx, usernameOrID)
 	if err != nil {
 		return nil, err
@@ -152,9 +155,6 @@ func (c *Client) AddUserMedia(ctx context.Context, usernameOrID, mediatypeNameOr
 	}
 	if period == "" {
 		period = "1-7,00:00-24:00"
-	}
-	if severity <= 0 {
-		severity = 63
 	}
 
 	if dryRun {
