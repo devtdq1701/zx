@@ -74,14 +74,24 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			dur, err := time.ParseDuration(maintPeriod)
+			if err := oneOf("--data-collection", maintDataColl, "with_data", "no_data"); err != nil {
+				return err
+			}
+			client, _, _, err := GetActiveClient()
 			if err != nil {
+				return err
+			}
+			dur, perr := time.ParseDuration(maintPeriod)
+			if perr != nil {
 				// Fallback: check if integer seconds
 				sec, sErr := strconv.Atoi(maintPeriod)
 				if sErr != nil {
-					return fmt.Errorf("invalid period %q (use e.g. 1h, 30m): %w", maintPeriod, err)
+					return fmt.Errorf("invalid period %q (use e.g. 1h, 30m): %w", maintPeriod, perr)
 				}
 				dur = time.Duration(sec) * time.Second
+			}
+			if dur <= 0 {
+				return fmt.Errorf("--period must be positive, got %q", maintPeriod)
 			}
 			now := time.Now().Unix()
 			activeTill := now + int64(dur.Seconds())
@@ -108,8 +118,11 @@ var (
 				}
 			}
 
+			if len(hostIDs) == 0 && len(groupIDs) == 0 {
+				return fmt.Errorf("specify at least one --host or --hostgroup")
+			}
 			maintType := 0
-			if maintDataColl == "no_data" || maintDataColl == "1" {
+			if maintDataColl == "no_data" {
 				maintType = 1
 			}
 
@@ -119,13 +132,27 @@ var (
 				"active_till":      activeTill,
 				"description":      maintDesc,
 				"maintenance_type": maintType,
-				"hostids":          hostIDs,
-				"groupids":         groupIDs,
 				"timeperiods": []map[string]any{{
 					"timeperiod_type": 0,
 					"start_date":      now,
 					"period":          int(dur.Seconds()),
 				}},
+			}
+			// Zabbix 6.0 replaced hostids/groupids with hosts/groups objects.
+			v60, err := client.APIAtLeast(cmd.Context(), 6, 0)
+			if err != nil {
+				return err
+			}
+			if v60 {
+				if len(hostIDs) > 0 {
+					params["hosts"] = idObjects("hostid", hostIDs)
+				}
+				if len(groupIDs) > 0 {
+					params["groups"] = idObjects("groupid", groupIDs)
+				}
+			} else {
+				params["hostids"] = append([]string{}, hostIDs...)
+				params["groupids"] = append([]string{}, groupIDs...)
 			}
 
 			return runMutation(cmd, "maintenance.create", params, maintYes, fmt.Sprintf("Created maintenance definition %q.", name))
@@ -181,8 +208,11 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eids := splitCSV(args[0])
-			if len(eids) == 0 {
-				return fmt.Errorf("no event IDs specified")
+			if err := validateIDs("event", eids); err != nil {
+				return err
+			}
+			if strings.TrimSpace(ackMsg) == "" {
+				return fmt.Errorf("acknowledge message must not be empty (-m)")
 			}
 			action := 2 | 4 // ack + message
 			if ackClose {
@@ -213,8 +243,11 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			trigIDs := splitCSV(args[0])
-			if len(trigIDs) == 0 {
-				return fmt.Errorf("no trigger IDs specified")
+			if err := validateIDs("trigger", trigIDs); err != nil {
+				return err
+			}
+			if strings.TrimSpace(ackTrigMsg) == "" {
+				return fmt.Errorf("acknowledge message must not be empty (-m)")
 			}
 			client, _, _, err := GetActiveClient()
 			if err != nil {
@@ -434,12 +467,15 @@ var (
 		Short: "Enable or disable monitoring for a host",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := oneOf("--status", monitorStatus, "monitored", "unmonitored"); err != nil {
+				return err
+			}
 			hid, err := resolveSingleHostID(cmd, args[0])
 			if err != nil {
 				return err
 			}
 			statusVal := 0
-			if monitorStatus == "unmonitored" || monitorStatus == "1" || monitorStatus == "disable" {
+			if monitorStatus == "unmonitored" {
 				statusVal = 1
 			}
 			params := map[string]any{
@@ -669,6 +705,12 @@ var (
 		Short: "Define or update a host macro ({$MACRO})",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateMacro(args[1]); err != nil {
+				return err
+			}
+			if err := validateMacroType(hostMacroType); err != nil {
+				return err
+			}
 			client, _, _, err := GetActiveClient()
 			if err != nil {
 				return err
@@ -725,6 +767,12 @@ var (
 		Short: "Define or update a global macro ({$MACRO})",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateMacro(args[0]); err != nil {
+				return err
+			}
+			if err := validateMacroType(globalMacroType); err != nil {
+				return err
+			}
 			client, _, _, err := GetActiveClient()
 			if err != nil {
 				return err
@@ -776,6 +824,9 @@ var (
 		Use:   "export_configuration",
 		Short: "Export Zabbix configuration in XML, JSON, or YAML format",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := oneOf("--format", expConfigFormat, "json", "xml", "yaml"); err != nil {
+				return err
+			}
 			client, _, _, err := GetActiveClient()
 			if err != nil {
 				return err
@@ -812,7 +863,20 @@ var (
 					}
 					gids = append(gids, gid)
 				}
-				options["groups"] = gids
+				// Zabbix 6.2 split host groups from template groups.
+				v62, err := client.APIAtLeast(cmd.Context(), 6, 2)
+				if err != nil {
+					return err
+				}
+				key := "groups"
+				if v62 {
+					key = "host_groups"
+				}
+				options[key] = gids
+			}
+
+			if len(options) == 0 {
+				return fmt.Errorf("specify at least one of --hosts, --templates, --hostgroups")
 			}
 
 			params := map[string]any{

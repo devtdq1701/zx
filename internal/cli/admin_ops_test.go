@@ -75,6 +75,7 @@ func TestAdminOpsAcknowledgeEvent(t *testing.T) {
 func TestAdminOpsMaintenance(t *testing.T) {
 	h, cleanup := setupMockClient(t, map[string]any{
 		"apiinfo.version":    "7.0.0",
+		"hostgroup.get":      []map[string]any{{"groupid": "5", "name": "G1"}},
 		"maintenance.create": map[string]any{"maintenanceids": []string{"1"}},
 		"maintenance.delete": []string{"1"},
 	})
@@ -83,7 +84,7 @@ func TestAdminOpsMaintenance(t *testing.T) {
 	// Test create
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
-	rootCmd.SetArgs([]string{"create_maintenance_definition", "Weekly-Patch", "--period", "2h", "--yes"})
+	rootCmd.SetArgs([]string{"create_maintenance_definition", "Weekly-Patch", "--hostgroup", "G1", "--period", "2h", "--yes"})
 	if err := rootCmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("create maint error: %v", err)
 	}
@@ -208,6 +209,7 @@ func TestAdminOpsMacro(t *testing.T) {
 func TestAdminOpsReadOnly(t *testing.T) {
 	_, cleanup := setupMockClient(t, map[string]any{
 		"apiinfo.version": "7.0.0",
+		"hostgroup.get":   []map[string]any{{"groupid": "5", "name": "G1"}},
 		"problem.get": []map[string]any{
 			{"eventid": "99", "name": "CPU high", "severity": "4", "clock": "1727712000", "acknowledged": "0"},
 		},
@@ -242,7 +244,7 @@ func TestAdminOpsReadOnly(t *testing.T) {
 
 	// export_configuration
 	buf.Reset()
-	rootCmd.SetArgs([]string{"export_configuration", "--format", "json"})
+	rootCmd.SetArgs([]string{"export_configuration", "--hostgroups", "G1", "--format", "json"})
 	if err := rootCmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("export_configuration error: %v", err)
 	}
@@ -266,5 +268,129 @@ func TestMutationRefusesAmbiguousOrPatternHost(t *testing.T) {
 	}
 	if h.count("host.update") != 0 {
 		t.Fatal("host.update must not be sent for an unresolved host")
+	}
+}
+
+func TestMonitorHostRejectsUnknownStatus(t *testing.T) {
+	h, cleanup := setupMockClient(t, map[string]any{
+		"apiinfo.version": "7.4.0",
+		"host.get":        []map[string]any{{"hostid": "111", "host": "eofhni1", "name": "eofhni1"}},
+	})
+	defer cleanup()
+	_, _, err := runCLI(t, "monitor_host", "eofhni1", "--status", "unmonitor", "--yes")
+	if err == nil || !strings.Contains(err.Error(), "invalid --status 'unmonitor'") {
+		t.Fatalf("got %v", err)
+	}
+	if h.count("host.update") != 0 {
+		t.Fatal("no mutation on invalid status")
+	}
+}
+
+func maintenanceMock(version string) map[string]any {
+	return map[string]any{
+		"apiinfo.version":    version,
+		"hostgroup.get":      []map[string]any{{"groupid": "5", "name": "G1"}},
+		"maintenance.create": map[string]any{"maintenanceids": []string{"1"}},
+	}
+}
+
+func TestMaintenanceUsesObjectsOn74(t *testing.T) {
+	h, cleanup := setupMockClient(t, maintenanceMock("7.4.14"))
+	defer cleanup()
+	if _, _, err := runCLI(t, "create_maintenance_definition", "m1", "--hostgroup", "G1", "--period", "1h", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	p := h.last("maintenance.create")
+	if _, bad := p["groupids"]; bad {
+		t.Fatalf("7.4 must not receive groupids: %v", p)
+	}
+	if _, bad := p["hostids"]; bad {
+		t.Fatalf("7.4 must not receive hostids: %v", p)
+	}
+	groups, _ := p["groups"].([]any)
+	if len(groups) != 1 || groups[0].(map[string]any)["groupid"] != "5" {
+		t.Fatalf("groups=%v", p["groups"])
+	}
+	if _, has := p["hosts"]; has {
+		t.Fatalf("no hosts key when no --host given: %v", p)
+	}
+}
+
+func TestMaintenanceUsesIDArraysOn52(t *testing.T) {
+	h, cleanup := setupMockClient(t, maintenanceMock("5.2.2"))
+	defer cleanup()
+	if _, _, err := runCLI(t, "create_maintenance_definition", "m1", "--hostgroup", "G1", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	p := h.last("maintenance.create")
+	hostids, ok := p["hostids"].([]any)
+	if !ok || len(hostids) != 0 {
+		t.Fatalf("5.2 hostids must be [] not null: %#v", p["hostids"])
+	}
+	if g, _ := p["groupids"].([]any); len(g) != 1 || g[0] != "5" {
+		t.Fatalf("groupids=%v", p["groupids"])
+	}
+}
+
+func TestMaintenanceRequiresTarget(t *testing.T) {
+	_, cleanup := setupMockClient(t, maintenanceMock("7.4.14"))
+	defer cleanup()
+	_, _, err := runCLI(t, "create_maintenance_definition", "m1")
+	if err == nil || !strings.Contains(err.Error(), "--host or --hostgroup") {
+		t.Fatalf("got %v", err)
+	}
+	_, _, err = runCLI(t, "create_maintenance_definition", "m1", "--hostgroup", "G1", "--data-collection", "nodata")
+	if err == nil || !strings.Contains(err.Error(), "invalid --data-collection") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestExportConfigurationGroupKeyByVersion(t *testing.T) {
+	for _, tc := range []struct{ version, key string }{{"7.4.14", "host_groups"}, {"5.2.2", "groups"}} {
+		h, cleanup := setupMockClient(t, map[string]any{
+			"apiinfo.version":      tc.version,
+			"hostgroup.get":        []map[string]any{{"groupid": "5", "name": "G1"}},
+			"configuration.export": "{}",
+		})
+		if _, _, err := runCLI(t, "export_configuration", "--hostgroups", "G1", "--format", "xml"); err != nil {
+			cleanup()
+			t.Fatalf("%s: %v", tc.version, err)
+		}
+		opts, _ := h.last("configuration.export")["options"].(map[string]any)
+		if _, ok := opts[tc.key]; !ok {
+			t.Errorf("%s: expected options.%s, got %v", tc.version, tc.key, opts)
+		}
+		cleanup()
+	}
+}
+
+func TestExportConfigurationValidation(t *testing.T) {
+	_, cleanup := setupMockClient(t, map[string]any{"apiinfo.version": "7.4.14"})
+	defer cleanup()
+	if _, _, err := runCLI(t, "export_configuration", "--hostgroups", "G1", "--format", "csv"); err == nil || !strings.Contains(err.Error(), "invalid --format 'csv'") {
+		t.Fatalf("got %v", err)
+	}
+	if _, _, err := runCLI(t, "export_configuration"); err == nil || !strings.Contains(err.Error(), "at least one of") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestMacroAndAckValidation(t *testing.T) {
+	_, cleanup := setupMockClient(t, map[string]any{
+		"apiinfo.version": "7.4.0",
+		"host.get":        []map[string]any{{"hostid": "111", "host": "eofhni1", "name": "eofhni1"}},
+	})
+	defer cleanup()
+	if _, _, err := runCLI(t, "define_global_macro", "BAD", "v"); err == nil || !strings.Contains(err.Error(), "invalid macro") {
+		t.Fatalf("got %v", err)
+	}
+	if _, _, err := runCLI(t, "define_host_macro", "eofhni1", "{$OK}", "v", "--type", "7"); err == nil || !strings.Contains(err.Error(), "invalid --type") {
+		t.Fatalf("got %v", err)
+	}
+	if _, _, err := runCLI(t, "acknowledge_event", "12a"); err == nil || !strings.Contains(err.Error(), "invalid event ID") {
+		t.Fatalf("got %v", err)
+	}
+	if _, _, err := runCLI(t, "acknowledge_event", "12", "-m", " "); err == nil || !strings.Contains(err.Error(), "message") {
+		t.Fatalf("got %v", err)
 	}
 }
