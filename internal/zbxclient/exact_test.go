@@ -175,3 +175,37 @@ func TestResolveExactHostSameHostBothNames(t *testing.T) {
 		t.Fatalf("one host matching both fields must resolve, got %+v %v", h, err)
 	}
 }
+
+func TestResolveExactMaintenance(t *testing.T) {
+	cases := []struct {
+		name, target, byID, byName, want, errPart string
+	}{
+		{"by name", "patch", `[]`, `[{"maintenanceid":"5","name":"patch"}]`, "5", ""},
+		{"filter ignored", "patch", `[]`, `[{"maintenanceid":"5","name":"patch-old"},{"maintenanceid":"6","name":"patch"}]`, "6", ""},
+		{"none", "zz", `[]`, `[{"maintenanceid":"5","name":"other"}]`, "", "not found"},
+		{"duplicate names", "patch", `[]`, `[{"maintenanceid":"5","name":"patch"},{"maintenanceid":"6","name":"patch"}]`, "", "ambiguous"},
+		{"only id", "31", `[{"maintenanceid":"31","name":"nightly"}]`, `[]`, "31", ""},
+		{"id vs name", "31", `[{"maintenanceid":"31","name":"nightly"}]`, `[{"maintenanceid":"8","name":"31"}]`, "", "ambiguous"},
+	}
+	for _, tc := range cases {
+		c := exactClient(t, func(m string, p json.RawMessage) string {
+			if m != "maintenance.get" {
+				return `[]`
+			}
+			if strings.Contains(string(p), `"maintenanceids"`) {
+				return tc.byID
+			}
+			return tc.byName
+		})
+		got, err := c.ResolveExactMaintenance(context.Background(), tc.target)
+		if tc.errPart != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.errPart) {
+				t.Fatalf("%s: want %q error, got %+v %v", tc.name, tc.errPart, got, err)
+			}
+			continue
+		}
+		if err != nil || got.MaintenanceID != tc.want {
+			t.Fatalf("%s: got %+v %v", tc.name, got, err)
+		}
+	}
+}

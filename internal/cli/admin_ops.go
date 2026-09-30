@@ -169,28 +169,15 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := args[0]
-			maintID := target
-			if _, err := strconv.Atoi(target); err != nil {
-				client, _, _, err := GetActiveClient()
-				if err != nil {
-					return err
-				}
-				var maints []struct {
-					MaintenanceID string `json:"maintenanceid"`
-					Name          string `json:"name"`
-				}
-				err = client.Call(cmd.Context(), "maintenance.get", map[string]any{
-					"filter": map[string]string{"name": target},
-					"output": []string{"maintenanceid", "name"},
-				}, &maints)
-				if err != nil {
-					return err
-				}
-				if len(maints) == 0 {
-					return fmt.Errorf("maintenance definition not found: %s", target)
-				}
-				maintID = maints[0].MaintenanceID
+			client, _, _, err := GetActiveClient()
+			if err != nil {
+				return err
 			}
+			m, err := client.ResolveExactMaintenance(cmd.Context(), target)
+			if err != nil {
+				return err
+			}
+			maintID := m.MaintenanceID
 
 			return runMutation(cmd, "maintenance.delete", []string{maintID}, removeMaintYes, fmt.Sprintf("Removed maintenance definition %s.", target))
 		},

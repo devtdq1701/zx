@@ -169,3 +169,34 @@ func (c *Client) ResolveExactTemplate(ctx context.Context, nameOrID string) (Tem
 	}
 	return exactlyOne("template", nameOrID, exact, func(tp TemplateRecord) string { return tp.Host + " (" + tp.TemplateID + ")" })
 }
+
+type MaintenanceRecord struct {
+	MaintenanceID string `json:"maintenanceid"`
+	Name          string `json:"name"`
+}
+
+// ResolveExactMaintenance resolves a maintenance by exact name or existing
+// ID; a digit-only value is checked as both.
+func (c *Client) ResolveExactMaintenance(ctx context.Context, nameOrID string) (MaintenanceRecord, error) {
+	nameOrID = strings.TrimSpace(nameOrID)
+	lookups := []map[string]any{{"filter": map[string]string{"name": nameOrID}}}
+	if isNumericID(nameOrID) {
+		lookups = append(lookups, map[string]any{"maintenanceids": []string{nameOrID}})
+	}
+	var exact []MaintenanceRecord
+	seen := map[string]bool{}
+	for _, params := range lookups {
+		params["output"] = []string{"maintenanceid", "name"}
+		var found []MaintenanceRecord
+		if err := c.Call(ctx, "maintenance.get", params, &found); err != nil {
+			return MaintenanceRecord{}, fmt.Errorf("maintenance.get: %w", err)
+		}
+		for _, m := range found {
+			if (m.MaintenanceID == nameOrID || m.Name == nameOrID) && !seen[m.MaintenanceID] {
+				seen[m.MaintenanceID] = true
+				exact = append(exact, m)
+			}
+		}
+	}
+	return exactlyOne("maintenance", nameOrID, exact, func(m MaintenanceRecord) string { return m.Name + " (" + m.MaintenanceID + ")" })
+}

@@ -77,6 +77,7 @@ func TestAdminOpsMaintenance(t *testing.T) {
 		"apiinfo.version":    "7.0.0",
 		"hostgroup.get":      []map[string]any{{"groupid": "5", "name": "G1"}},
 		"maintenance.create": map[string]any{"maintenanceids": []string{"1"}},
+		"maintenance.get":    []map[string]any{{"maintenanceid": "1", "name": "Weekly-Patch"}},
 		"maintenance.delete": []string{"1"},
 	})
 	defer cleanup()
@@ -476,5 +477,32 @@ func TestShowLastValuesJSONEmptyIsArray(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != "[]" {
 		t.Fatalf("got %q", out)
+	}
+}
+
+func TestRemoveMaintenanceRequiresExactMatch(t *testing.T) {
+	h, cleanup := setupMockClient(t, map[string]any{
+		// A server that ignores the name filter returns every maintenance.
+		"maintenance.get": []map[string]any{{"maintenanceid": "5", "name": "patch-old"}, {"maintenanceid": "6", "name": "other"}},
+	})
+	defer cleanup()
+	_, _, err := runCLI(t, "remove_maintenance_definition", "patch", "--yes")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("got %v", err)
+	}
+	if n := h.count("maintenance.delete"); n != 0 {
+		t.Fatalf("maintenance.delete sent %d times", n)
+	}
+}
+
+func TestRemoveMaintenanceNumericIDVerified(t *testing.T) {
+	h, cleanup := setupMockClient(t, map[string]any{})
+	defer cleanup()
+	_, _, err := runCLI(t, "remove_maintenance_definition", "999", "--yes")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("unknown numeric ID must not be deleted blindly, got %v", err)
+	}
+	if n := h.count("maintenance.delete"); n != 0 {
+		t.Fatalf("maintenance.delete sent %d times", n)
 	}
 }
