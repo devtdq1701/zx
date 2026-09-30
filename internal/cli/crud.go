@@ -147,7 +147,7 @@ func registerCRUDRoutes() {
 				var raw []map[string]any
 				params := map[string]any{
 					"output": "extend",
-					idKey:   []string{args[0]},
+					idKey:    []string{args[0]},
 				}
 
 				if err := client.Call(cmd.Context(), method, params, &raw); err != nil {
