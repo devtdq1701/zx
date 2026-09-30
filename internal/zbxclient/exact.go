@@ -65,6 +65,9 @@ func (c *Client) ResolveExactHost(ctx context.Context, target string) (HostRecor
 			}
 		}
 	} else {
+		// One host's technical name can equal another's visible name, so
+		// both are always checked and the union must hold a single host.
+		seen := map[string]bool{}
 		for _, field := range []string{"host", "name"} {
 			var found []HostRecord
 			if err := c.Call(ctx, "host.get", map[string]any{
@@ -74,12 +77,10 @@ func (c *Client) ResolveExactHost(ctx context.Context, target string) (HostRecor
 				return HostRecord{}, fmt.Errorf("host.get: %w", err)
 			}
 			for _, h := range found {
-				if (field == "host" && h.Host == target) || (field == "name" && h.Name == target) {
+				if ((field == "host" && h.Host == target) || (field == "name" && h.Name == target)) && !seen[h.HostID] {
+					seen[h.HostID] = true
 					hosts = append(hosts, h)
 				}
-			}
-			if len(hosts) > 0 {
-				break
 			}
 		}
 	}

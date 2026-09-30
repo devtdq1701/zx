@@ -147,3 +147,31 @@ func TestResolveExactTemplateNumericName(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveExactHostTechnicalVisibleCollision(t *testing.T) {
+	c := exactClient(t, func(m string, p json.RawMessage) string {
+		if m != "host.get" {
+			return `[]`
+		}
+		if strings.Contains(string(p), `"host":"web1"`) {
+			return `[{"hostid":"1","host":"web1","name":"Web One"}]`
+		}
+		return `[{"hostid":"2","host":"web-b","name":"web1"}]`
+	})
+	if _, err := c.ResolveExactHost(context.Background(), "web1"); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("technical vs visible name collision must be ambiguous, got %v", err)
+	}
+}
+
+func TestResolveExactHostSameHostBothNames(t *testing.T) {
+	c := exactClient(t, func(m string, p json.RawMessage) string {
+		if m == "host.get" {
+			return `[{"hostid":"1","host":"web1","name":"web1"}]`
+		}
+		return `[]`
+	})
+	h, err := c.ResolveExactHost(context.Background(), "web1")
+	if err != nil || h.HostID != "1" {
+		t.Fatalf("one host matching both fields must resolve, got %+v %v", h, err)
+	}
+}
