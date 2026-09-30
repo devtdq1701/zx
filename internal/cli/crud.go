@@ -165,34 +165,34 @@ func registerCRUDRoutes() {
 		}
 
 		// Delete sub-command
+		var delYes bool
+		delShort := fmt.Sprintf("Delete a %s by ID (dry-run unless --yes)", ent)
+		if ent == "macro" {
+			delShort = "Delete a host macro by hostmacroid via usermacro.delete (dry-run unless --yes)"
+		}
 		delCmd := &cobra.Command{
 			Use:   "delete [ID]",
-			Short: fmt.Sprintf("Delete a %s by ID", ent),
+			Short: delShort,
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				client, _, _, err := GetActiveClient()
-				if err != nil {
+				if err := validateIDs(ent, args); err != nil {
 					return err
 				}
-
 				method := ent + ".delete"
 				if ent == "macro" {
 					method = "usermacro.delete"
 				}
-
-				var result any
-				if err := client.Call(cmd.Context(), method, []string{args[0]}, &result); err != nil {
-					return fmt.Errorf("%s.delete failed: %w", ent, err)
-				}
-
-				fmt.Printf("Successfully deleted %s '%s'.\n", ent, args[0])
-				return nil
+				return runMutation(cmd, method, []string{args[0]}, delYes, fmt.Sprintf("Deleted %s '%s'.", ent, args[0]))
 			},
 		}
+		delCmd.Flags().BoolVar(&delYes, "yes", false, "Confirm execution (bypasses dry-run)")
 
 		entityCmd.AddCommand(listCmd)
 		entityCmd.AddCommand(getCmd)
-		entityCmd.AddCommand(delCmd)
+		// Zabbix has no problem.delete API.
+		if ent != "problem" {
+			entityCmd.AddCommand(delCmd)
+		}
 		rootCmd.AddCommand(entityCmd)
 	}
 }
