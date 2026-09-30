@@ -7,12 +7,7 @@ import (
 )
 
 func TestFormatFlagValidation(t *testing.T) {
-	root := RootCmd()
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"--config", "/nonexistent-zx-test.yaml", "--format", "xml", "show_hosts", "x"})
-	err := root.Execute()
+	_, _, err := runCLI(t, "--config", "/nonexistent-zx-test.yaml", "--format", "xml", "show_hosts", "x")
 	if err == nil || !strings.Contains(err.Error(), "invalid --format") {
 		t.Fatalf("expected invalid --format error, got %v", err)
 	}

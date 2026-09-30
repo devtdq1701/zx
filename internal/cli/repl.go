@@ -123,8 +123,7 @@ func RunREPL() error {
 			continue
 		}
 
-		rootCmd.SetArgs(args)
-		_ = rootCmd.ExecuteContext(context.Background())
+		_ = executeLine(context.Background(), args)
 	}
 	return nil
 }

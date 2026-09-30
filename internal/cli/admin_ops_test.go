@@ -3,74 +3,9 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
-	"time"
-
-	"zx/internal/config"
-	"zx/internal/zbxclient"
 )
-
-type rpcHandler struct {
-	mu       sync.Mutex
-	calls    []string
-	requests []map[string]any
-	resps    map[string]any
-}
-
-func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		JSONRPC string          `json:"jsonrpc"`
-		Method  string          `json:"method"`
-		Params  json.RawMessage `json:"params"`
-		ID      int             `json:"id"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.calls = append(h.calls, req.Method)
-
-	var p map[string]any
-	_ = json.Unmarshal(req.Params, &p)
-	h.requests = append(h.requests, p)
-
-	respResult, ok := h.resps[req.Method]
-	if !ok {
-		respResult = []any{}
-	}
-
-	resBytes, _ := json.Marshal(respResult)
-	resp := map[string]any{
-		"jsonrpc": "2.0",
-		"result":  json.RawMessage(resBytes),
-		"id":      req.ID,
-	}
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func setupMockClient(t *testing.T, resps map[string]any) (*rpcHandler, func()) {
-	t.Helper()
-	h := &rpcHandler{resps: resps}
-	ts := httptest.NewServer(h)
-
-	prevClient, prevProf, prevName := activeClient, activeProf, activeName
-	activeProf = &config.Profile{URL: ts.URL, Token: "test-token"}
-	activeName = "test-prof"
-	activeClient = zbxclient.NewClient(activeProf, 5*time.Second)
-
-	cleanup := func() {
-		ts.Close()
-		activeClient = prevClient
-		activeProf = prevProf
-		activeName = prevName
-	}
-	return h, cleanup
-}
 
 func TestAdminOpsDryRun(t *testing.T) {
 	h, cleanup := setupMockClient(t, map[string]any{
@@ -245,11 +180,11 @@ func TestAdminOpsTemplate(t *testing.T) {
 
 func TestAdminOpsMacro(t *testing.T) {
 	_, cleanup := setupMockClient(t, map[string]any{
-		"apiinfo.version":         "7.0.0",
-		"host.get":                []map[string]any{{"hostid": "100", "host": "srv1"}},
-		"usermacro.get":           []any{},
-		"usermacro.create":        map[string]any{"hostmacroids": []string{"1"}},
-		"usermacro.createglobal":  map[string]any{"globalmacroids": []string{"1"}},
+		"apiinfo.version":        "7.0.0",
+		"host.get":               []map[string]any{{"hostid": "100", "host": "srv1"}},
+		"usermacro.get":          []any{},
+		"usermacro.create":       map[string]any{"hostmacroids": []string{"1"}},
+		"usermacro.createglobal": map[string]any{"globalmacroids": []string{"1"}},
 	})
 	defer cleanup()
 

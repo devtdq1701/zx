@@ -19,6 +19,10 @@ var (
 	activeProf   *config.Profile
 	activeName   string
 
+	// testProfile, when set by tests, replaces config loading so tests never
+	// read the user's real ~/.config/zx or ~/.config/zabbix-cli files.
+	testProfile *config.Profile
+
 	rootCmd = &cobra.Command{
 		Use:   "zx",
 		Short: "zx - Fast Golang Zabbix CLI & REPL client",
@@ -26,6 +30,14 @@ var (
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateFormat(); err != nil {
 				return err
+			}
+			// Re-resolve the client on every execution so a REPL line always
+			// talks to the profile selected for that line.
+			activeClient, activeProf, activeName = nil, nil, ""
+			if testProfile != nil {
+				activeProf, activeName = testProfile, "test"
+				activeClient = zbxclient.NewClient(testProfile, 5*time.Second)
+				return nil
 			}
 			var err error
 			if cfgFile != "" {
@@ -41,19 +53,23 @@ var (
 			if profileFlag != "" {
 				targetProfile = profileFlag
 			}
-
-			if targetProfile != "" && activeClient == nil {
-				prof, err := appConfig.GetProfile(targetProfile)
-				if err == nil {
-					activeProf = prof
-					activeName = targetProfile
-					timeout := time.Duration(appConfig.Defaults.TimeoutSeconds) * time.Second
-					if timeout <= 0 {
-						timeout = 30 * time.Second
-					}
-					activeClient = zbxclient.NewClient(prof, timeout)
-				}
+			if targetProfile == "" {
+				return nil
 			}
+			prof, err := appConfig.GetProfile(targetProfile)
+			if err != nil {
+				if profileFlag != "" {
+					return fmt.Errorf("profile '%s': %w", profileFlag, err)
+				}
+				return nil
+			}
+			activeProf = prof
+			activeName = targetProfile
+			timeout := time.Duration(appConfig.Defaults.TimeoutSeconds) * time.Second
+			if timeout <= 0 {
+				timeout = 30 * time.Second
+			}
+			activeClient = zbxclient.NewClient(prof, timeout)
 			return nil
 		},
 	}
