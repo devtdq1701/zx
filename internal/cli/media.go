@@ -7,11 +7,13 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"zx/internal/zbxclient"
 )
 
 var mediaCmd = &cobra.Command{
-	Use:   "media",
-	Short: "Show configured Zabbix alert media types and user channels",
+	Use:     "media",
+	Aliases: []string{"mediatype"},
+	Short:   "Show configured Zabbix alert media types and user channels",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client, _, _, err := GetActiveClient()
 		if err != nil {
@@ -179,7 +181,71 @@ var addUserMediaCmd = &cobra.Command{
 	},
 }
 
+var (
+	mediaTestID      string
+	mediaTestSendTo  string
+	mediaTestSubject string
+	mediaTestMessage string
+	mediaTestYes     bool
+)
+
+var mediaTestCmd = &cobra.Command{
+	Use:   "test",
+	Short: "Send a test message using a media type",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if strings.TrimSpace(mediaTestID) == "" {
+			return fmt.Errorf("--id is required")
+		}
+		if strings.TrimSpace(mediaTestSendTo) == "" {
+			return fmt.Errorf("--sendto is required")
+		}
+		if strings.TrimSpace(mediaTestSubject) == "" {
+			return fmt.Errorf("--subject is required")
+		}
+		if strings.TrimSpace(mediaTestMessage) == "" {
+			return fmt.Errorf("--message is required")
+		}
+
+		payload := zbxclient.MediaTypeTestParams{
+			MediaTypeID: mediaTestID,
+			SendTo:      mediaTestSendTo,
+			Subject:     mediaTestSubject,
+			Message:     mediaTestMessage,
+		}
+
+		if !mediaTestYes {
+			return runMutation(cmd, "mediatype.test", payload, false, "")
+		}
+
+		client, _, _, err := GetActiveClient()
+		if err != nil {
+			return err
+		}
+
+		res, err := client.TestMediaType(cmd.Context(), payload)
+		if err != nil {
+			return fmt.Errorf("mediatype.test: %w", err)
+		}
+		if !res.Success {
+			return fmt.Errorf("mediatype test failed: %s", res.Error)
+		}
+
+		fmt.Fprintf(cmd.OutOrStdout(), "Successfully sent test message to %s.\n", mediaTestSendTo)
+		return nil
+	},
+}
+
 func init() {
+	mediaTestCmd.Flags().StringVar(&mediaTestID, "id", "", "Media type ID (required)")
+	mediaTestCmd.Flags().StringVar(&mediaTestSendTo, "sendto", "", "Recipient address or chat ID (required)")
+	mediaTestCmd.Flags().StringVar(&mediaTestSubject, "subject", "", "Message subject (required)")
+	mediaTestCmd.Flags().StringVar(&mediaTestMessage, "message", "", "Message body (required)")
+	mediaTestCmd.Flags().BoolVar(&mediaTestYes, "yes", false, "Confirm execution (bypasses dry-run)")
+	_ = mediaTestCmd.MarkFlagRequired("id")
+	_ = mediaTestCmd.MarkFlagRequired("sendto")
+	_ = mediaTestCmd.MarkFlagRequired("subject")
+	_ = mediaTestCmd.MarkFlagRequired("message")
+
 	createTelegramCmd.Flags().StringVar(&tgParseMode, "parse-mode", "", "Telegram parse mode")
 	createTelegramCmd.Flags().BoolVar(&tgYes, "yes", false, "Confirm execution (bypasses dry-run)")
 	createTelegramCmd.Flags().BoolVar(&tgDryRun, "dryrun", false, "Preview without writing")
@@ -194,6 +260,7 @@ func init() {
 	addUserMediaCmd.Flags().BoolVar(&userMediaDryRun, "dryrun", false, "Preview without writing")
 	_ = addUserMediaCmd.Flags().MarkDeprecated("dryrun", "preview is now the default; use --yes to apply")
 
+	mediaCmd.AddCommand(mediaTestCmd)
 	mediaCmd.AddCommand(mediaUserCmd)
 	mediaCmd.AddCommand(createTelegramCmd)
 	mediaCmd.AddCommand(addUserMediaCmd)

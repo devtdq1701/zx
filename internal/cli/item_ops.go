@@ -160,6 +160,46 @@ var (
 			return nil
 		},
 	}
+
+	itemExecuteNowID  string
+	itemExecuteNowYes bool
+
+	itemExecuteNowCmd = &cobra.Command{
+		Use:     "execute_now [ITEM_ID]",
+		Aliases: []string{"execute-now"},
+		Short:   "Trigger immediate active check / execution for an item",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			itemID := strings.TrimSpace(itemExecuteNowID)
+			if itemID == "" && len(args) > 0 {
+				itemID = strings.TrimSpace(args[0])
+			}
+			if itemID == "" {
+				return fmt.Errorf("--itemid or item ID argument is required")
+			}
+
+			payload := map[string]any{
+				"type": 6,
+				"request": map[string]string{
+					"itemid": itemID,
+				},
+			}
+
+			if !itemExecuteNowYes {
+				return runMutation(cmd, "task.create", payload, false, "")
+			}
+
+			client, _, _, err := GetActiveClient()
+			if err != nil {
+				return err
+			}
+
+			if err := client.ExecuteItemNow(cmd.Context(), itemID); err != nil {
+				return fmt.Errorf("item.execute_now: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Executed item %s now (check task created).\n", itemID)
+			return nil
+		},
+	}
 )
 
 func init() {
@@ -182,10 +222,14 @@ func init() {
 	itemUpdateCmd.Flags().StringVar(&itemUpdateUnits, "units", "", "units of measurement")
 	itemUpdateCmd.Flags().BoolVar(&itemUpdateYes, "yes", false, "confirm execution (bypasses dry-run)")
 
+	itemExecuteNowCmd.Flags().StringVar(&itemExecuteNowID, "itemid", "", "item ID to execute now")
+	itemExecuteNowCmd.Flags().BoolVar(&itemExecuteNowYes, "yes", false, "confirm execution (bypasses dry-run)")
+
 	for _, cmd := range rootCmd.Commands() {
 		if cmd.Name() == "item" {
 			cmd.AddCommand(itemCreateCmd)
 			cmd.AddCommand(itemUpdateCmd)
+			cmd.AddCommand(itemExecuteNowCmd)
 			break
 		}
 	}
