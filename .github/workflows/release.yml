@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Compile binaries (Linux & Windows)
+        run: |
+          mkdir -p dist
+          VERSION="${GITHUB_REF_NAME:-dev}"
+
+          targets=(
+            "linux/amd64/zx"
+            "linux/arm64/zx"
+            "windows/amd64/zx.exe"
+            "windows/arm64/zx.exe"
+          )
+
+          for target in "${targets[@]}"; do
+            IFS="/" read -r os arch bin <<< "$target"
+            echo "==> Building $os/$arch..."
+            out="dist/zx-${os}-${arch}"
+            if [[ "$os" == "windows" ]]; then
+              GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build \
+                -ldflags="-s -w -X zx/internal/cli.Version=${VERSION}" \
+                -o "$out.exe" ./cmd/zx
+              (cd dist && zip -j "zx_${VERSION}_${os}_${arch}.zip" "zx-${os}-${arch}.exe")
+            else
+              GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build \
+                -ldflags="-s -w -X zx/internal/cli.Version=${VERSION}" \
+                -o "$out" ./cmd/zx
+              (cd dist && tar -czvf "zx_${VERSION}_${os}_${arch}.tar.gz" -C . "zx-${os}-${arch}")
+            fi
+          done
+
+          cd dist
+          sha256sum *.tar.gz *.zip > checksums.txt
+          ls -lh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+          generate_release_notes: true
+
+      - name: Upload Artifacts (for manual workflow_dispatch)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: zx-release-binaries
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
