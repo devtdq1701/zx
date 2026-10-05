@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -21,6 +20,7 @@ var crudEntities = []string{
 	"maintenance",
 	"problem",
 	"macro",
+	"httptest",
 }
 
 var entityIDKeyMap = map[string]string{
@@ -34,6 +34,7 @@ var entityIDKeyMap = map[string]string{
 	"maintenance":   "maintenanceid",
 	"problem":       "eventid",
 	"macro":         "macroid",
+	"httptest":      "httptestid",
 }
 
 func registerCRUDRoutes() {
@@ -70,11 +71,11 @@ func registerCRUDRoutes() {
 				}
 
 				if len(raw) == 0 {
-					fmt.Printf("No %s records found.\n", ent)
+					fmt.Fprintf(cmd.OutOrStdout(), "No %s records found.\n", ent)
 					return nil
 				}
 
-				tw := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+				tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
 				idKey := entityIDKeyMap[ent]
 				if idKey == "" {
 					idKey = ent + "id"
