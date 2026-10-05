@@ -1,0 +1,43 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: a41db529c92e4e1fb5bb1c586a8e2901
+      template: 'Template Mobile API'
+      name: 'Template Mobile API'
+      description: 'Giám sát dịch vụ Mobile App trên 6 node App Hà Nội (Port 8080)'
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: 33d7e083335c42f7b5422961ebdd2944
+          name: 'Mobile API HTTP Check (Port 8080)'
+          type: HTTP_AGENT
+          key: 'mobile.http.check[8080]'
+          url: 'http://{HOST.CONN}:8080/api/v1/health'
+          headers:
+            - name: Connection
+              value: close
+          tags:
+            - tag: Application
+              value: 'Mobile API HTTP'
+          triggers:
+            - uuid: 1eaf74b85f03455dbe11a4b55e582c29
+              expression: 'last(/Template Mobile API/mobile.http.check[8080])<>200 and max(/Template Mobile API/mobile.http.check[8080],2m)<>200'
+              name: 'Mobile API HTTP Check FAILED on {HOST.NAME} (Port 8080)'
+              priority: DISASTER
+        - uuid: a41db529c92e4e1fb5bb1c586a8e2902
+          name: 'Mobile App Service (Port 8080)'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.listen[8080]'
+          tags:
+            - tag: Application
+              value: 'Mobile API'
+          triggers:
+            - uuid: a41db529c92e4e1fb5bb1c586a8e2903
+              expression: 'last(/Template Mobile API/net.tcp.listen[8080])=0 and max(/Template Mobile API/net.tcp.listen[8080],2m)=0'
+              name: 'Mobile App Service is DOWN on {HOST.NAME} (Port 8080)'
+              priority: DISASTER
+              description: 'Cổng 8080 của dịch vụ Mobile App không phản hồi liên tiếp 2 phút'
+

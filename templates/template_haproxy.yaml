@@ -1,0 +1,340 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+  - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+    name: Templates/Applications
+  templates:
+  - uuid: f52da741b81e4d1ea5cc2e697b9e3001
+    template: Template HAProxy
+    name: Template HAProxy
+    description: Giám sát dịch vụ HAProxy, sức khỏe 3 Farm backend (Web, Mobile, Converter),
+      rtime > 5s và tài nguyên OS máy chủ HAProxy
+    groups:
+    - name: Templates/Applications
+    items:
+    - uuid: f52da741b81e4d1ea5cc2e697b9e3018
+      name: Farm Converter Active Backend Down
+      type: DEPENDENT
+      key: haproxy.backend.act.down[converterer_service]
+      preprocessing:
+      - type: JAVASCRIPT
+        parameters:
+        - "var rows = JSON.parse(value);\nvar c = 0;\nfor (var i = 0; i < rows.length;\
+          \ i++) {\n  if (rows[i].pxname === \"converterer_service\" && rows[i].svname\
+          \ !== \"BACKEND\" && rows[i].svname !== \"FRONTEND\" && rows[i].status ===\
+          \ \"DOWN\") {\n    c++;\n  }\n}\nreturn c;\n"
+      master_item:
+        key: haproxy.raw.stats
+      tags:
+      - tag: Application
+        value: HAProxy Farm Converter
+      triggers:
+      - uuid: f52da741b81e4d1ea5cc2e697b9e3020
+        expression: last(/Template HAProxy/haproxy.backend.act.down[converterer_service])>=2
+        name: Farm Converter converterer_service DOWN >= 2 nodes HIGH
+        priority: HIGH
+        dependencies:
+        - name: Farm Converter converterer_service DOWN >= 4 nodes CRITICAL
+          expression: last(/Template HAProxy/haproxy.backend.act.down[converterer_service])>=4
+      - uuid: f52da741b81e4d1ea5cc2e697b9e3019
+        expression: last(/Template HAProxy/haproxy.backend.act.down[converterer_service])>=4
+        name: Farm Converter converterer_service DOWN >= 4 nodes CRITICAL
+        priority: DISASTER
+    - uuid: f52da741b81e4d1ea5cc2e697b9e3015
+      name: Farm Mobile Active Backend Down
+      type: DEPENDENT
+      key: haproxy.backend.act.down[mobile_apiile]
+      preprocessing:
+      - type: JAVASCRIPT
+        parameters:
+        - "var rows = JSON.parse(value);\nvar c = 0;\nfor (var i = 0; i < rows.length;\
+          \ i++) {\n  if (rows[i].pxname === \"mobile_apiile\" && rows[i].svname\
+          \ !== \"BACKEND\" && rows[i].svname !== \"FRONTEND\" && rows[i].status ===\
+          \ \"DOWN\") {\n    c++;\n  }\n}\nreturn c;\n"
+      master_item:
+        key: haproxy.raw.stats
+      tags:
+      - tag: Application
+        value: HAProxy Farm Mobile
+      triggers:
+      - uuid: f52da741b81e4d1ea5cc2e697b9e3017
+        expression: last(/Template HAProxy/haproxy.backend.act.down[mobile_apiile])>=2
+        name: Farm Mobile mobile_apiile DOWN >= 2 nodes HIGH
+        priority: HIGH
+        dependencies:
+        - name: Farm Mobile mobile_apiile DOWN >= 4 nodes CRITICAL
+          expression: last(/Template HAProxy/haproxy.backend.act.down[mobile_apiile])>=4
+      - uuid: f52da741b81e4d1ea5cc2e697b9e3016
+        expression: last(/Template HAProxy/haproxy.backend.act.down[mobile_apiile])>=4
+        name: Farm Mobile mobile_apiile DOWN >= 4 nodes CRITICAL
+        priority: DISASTER
+    - uuid: f52da741b81e4d1ea5cc2e697b9e3008
+      name: Farm Web Active Backend Down
+      type: DEPENDENT
+      key: haproxy.backend.act.down[web_app]
+      preprocessing:
+      - type: JAVASCRIPT
+        parameters:
+        - "var rows = JSON.parse(value);\nvar c = 0;\nfor (var i = 0; i < rows.length;\
+          \ i++) {\n  if (rows[i].pxname === \"web_app\" && rows[i].svname !==\
+          \ \"BACKEND\" && rows[i].svname !== \"FRONTEND\" && rows[i].status ===\
+          \ \"DOWN\") {\n    c++;\n  }\n}\nreturn c;\n"
+      master_item:
+        key: haproxy.raw.stats
+      tags:
+      - tag: Application
+        value: HAProxy Farm Web
+      triggers:
+      - uuid: f52da741b81e4d1ea5cc2e697b9e3011
+        expression: last(/Template HAProxy/haproxy.backend.act.down[web_app])>=4
+        name: Farm Web web_app DOWN >= 4 nodes WARNING
+        priority: WARNING
+        dependencies:
+        - name: Farm Web web_app DOWN >= 8 nodes HIGH
+          expression: last(/Template HAProxy/haproxy.backend.act.down[web_app])>=8
+      - uuid: f52da741b81e4d1ea5cc2e697b9e3010
+        expression: last(/Template HAProxy/haproxy.backend.act.down[web_app])>=8
+        name: Farm Web web_app DOWN >= 8 nodes HIGH
+        priority: HIGH
+        dependencies:
+        - name: Farm Web web_app DOWN >= 16 nodes CRITICAL
+          expression: last(/Template HAProxy/haproxy.backend.act.down[web_app])>=16
+      - uuid: f52da741b81e4d1ea5cc2e697b9e3009
+        expression: last(/Template HAProxy/haproxy.backend.act.down[web_app])>=16
+        name: Farm Web web_app DOWN >= 16 nodes CRITICAL
+        priority: DISASTER
+    - uuid: f52da741b81e4d1ea5cc2e697b9e3013
+      name: Farm Web Queued Requests
+      type: DEPENDENT
+      key: haproxy.backend.qcur[web_app]
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.[?(@.pxname == "web_app" && @.svname == "BACKEND")].qcur.first()
+      master_item:
+        key: haproxy.raw.stats
+      tags:
+      - tag: Application
+        value: HAProxy Farm Web
+    - uuid: f52da741b81e4d1ea5cc2e697b9e3012
+      name: Farm Web Average Response Time
+      type: DEPENDENT
+      key: haproxy.backend.rtime[web_app]
+      value_type: FLOAT
+      units: ms
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.[?(@.pxname == "web_app" && @.svname == "BACKEND")].rtime.first()
+      master_item:
+        key: haproxy.raw.stats
+      tags:
+      - tag: Application
+        value: HAProxy Farm Web
+    - uuid: 30f97d96cc8f45d19a4bb3dcb988e5bd
+      name: HAProxy Frontend HTTP 5xx Responses
+      type: DEPENDENT
+      key: haproxy.frontend.hrsp_5xx[http]
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.[?(@.pxname == "http" && @.svname == "FRONTEND")].hrsp_5xx.first()
+      master_item:
+        key: haproxy.raw.stats
+      tags:
+      - tag: Application
+        value: HAProxy Frontend
+    - uuid: 0821d01e3f814b57b9447711f83817da
+      name: HAProxy Frontend Current Sessions (CU)
+      type: DEPENDENT
+      key: haproxy.frontend.scur[http]
+      preprocessing:
+      - type: JSONPATH
+        parameters:
+        - $.[?(@.pxname == "http" && @.svname == "FRONTEND")].scur.first()
+      master_item:
+        key: haproxy.raw.stats
+      tags:
+      - tag: Application
+        value: HAProxy Frontend
+    - uuid: f52da741b81e4d1ea5cc2e697b9e3021
+      name: HAProxy Raw Stats Poller
+      type: HTTP_AGENT
+      key: haproxy.raw.stats
+      value_type: TEXT
+      authtype: BASIC
+      username: '{$HAPROXY_STATS_USER}'
+      password: '{$HAPROXY_STATS_PASSWORD}'
+      preprocessing:
+      - type: REGEX
+        parameters:
+        - '# ([\s\S]*)\n'
+        - \1
+      - type: CSV_TO_JSON
+        parameters:
+        - ''
+        - ''
+        - '1'
+      url: '{$HAPROXY_STATS_SCHEME}://{$HAPROXY_STATS_HOST}:{$HAPROXY_STATS_PORT}/{$HAPROXY_STATS_PATH}'
+      headers:
+      - name: Connection
+        value: close
+      tags:
+      - tag: Application
+        value: HAProxy Internal
+    - uuid: f52da741b81e4d1ea5cc2e697b9e3004
+      name: HAProxy Port 80 Listening
+      type: ZABBIX_ACTIVE
+      key: net.tcp.listen[80]
+      tags:
+      - tag: Application
+        value: HAProxy Service
+      triggers:
+      - uuid: f52da741b81e4d1ea5cc2e697b9e3005
+        expression: last(/Template HAProxy/net.tcp.listen[80])=0
+        name: HAProxy Port 80 is NOT LISTENING on {HOST.NAME}
+        priority: DISASTER
+    - uuid: f52da741b81e4d1ea5cc2e697b9e3006
+      name: HAProxy Port 443 Listening
+      type: ZABBIX_ACTIVE
+      key: net.tcp.listen[443]
+      tags:
+      - tag: Application
+        value: HAProxy Service
+      triggers:
+      - uuid: f52da741b81e4d1ea5cc2e697b9e3007
+        expression: last(/Template HAProxy/net.tcp.listen[443])=0
+        name: HAProxy Port 443 is NOT LISTENING on {HOST.NAME}
+        priority: DISASTER
+    - uuid: f52da741b81e4d1ea5cc2e697b9e3002
+      name: HAProxy Daemon Process
+      type: ZABBIX_ACTIVE
+      key: proc.num[,,,haproxy]
+      tags:
+      - tag: Application
+        value: HAProxy Service
+      triggers:
+      - uuid: f52da741b81e4d1ea5cc2e697b9e3003
+        expression: last(/Template HAProxy/proc.num[,,,haproxy])=0
+        name: HAProxy Daemon is NOT RUNNING on {HOST.NAME}
+        priority: DISASTER
+    - uuid: 8f3c4e12d9a54b6791e8123456789001
+      name: Portal Main URL HTTP Status
+      type: HTTP_AGENT
+      key: web.portal.status
+      value_type: TEXT
+      url: '{$HAPROXY_STATS_SCHEME}://{$HAPROXY_STATS_HOST}:{$HAPROXY_STATS_PORT}/health'
+      headers:
+      - name: Host
+        value: '{$PORTAL_HOST}'
+      - name: Connection
+        value: close
+      retrieve_mode: HEADERS
+      verify_peer: 'NO'
+      verify_host: 'NO'
+      delay: 30s
+      timeout: 5s
+      preprocessing:
+      - type: REGEX
+        parameters:
+        - ^HTTP/[0-9.]+\s+([0-9]+)
+        - \1
+      tags:
+      - tag: Application
+        value: HAProxy Portal VIP
+      triggers:
+      - uuid: 8f3c4e12d9a54b6791e8123456789002
+        expression: last(/Template HAProxy/web.portal.status)<>"200"
+        name: Portal app HTTP Status is NOT 200 on {HOST.NAME}
+        priority: DISASTER
+    macros:
+    - macro: '{$HAPROXY_STATS_HOST}'
+      value: 192.0.2.20
+    - macro: '{$HAPROXY_STATS_PASSWORD}'
+      value: '<CHANGE_ME>'
+    - macro: '{$HAPROXY_STATS_PATH}'
+      value: info;csv
+    - macro: '{$HAPROXY_STATS_PORT}'
+      value: '443'
+    - macro: '{$HAPROXY_STATS_SCHEME}'
+      value: https
+    - macro: '{$HAPROXY_STATS_USER}'
+      value: admin
+    - macro: '{$PORTAL_HOST}'
+      value: app.example.com
+    discovery_rules:
+    - uuid: 8f3c4e12d9a54b6791e8123456789010
+      name: HAProxy Backend Server Discovery
+      type: DEPENDENT
+      key: haproxy.backend.discovery
+      delay: '0'
+      master_item:
+        key: haproxy.raw.stats
+      preprocessing:
+      - type: JAVASCRIPT
+        parameters:
+        - "var rows = JSON.parse(value);\nvar lld = [];\nfor (var i = 0; i < rows.length;\
+          \ i++) {\n  var r = rows[i];\n  if ((r.pxname === \"web_app\" || r.pxname\
+          \ === \"mobile_apiile\") && r.svname !== \"FRONTEND\" && r.svname !== \"\
+          BACKEND\") {\n    lld.push({\n      \"{#PXNAME}\": r.pxname,\n      \"{#SVNAME}\"\
+          : r.svname\n    });\n  }\n}\nreturn JSON.stringify(lld);"
+      item_prototypes:
+      - uuid: 8f3c4e12d9a54b6791e8123456789011
+        name: HAProxy Server [{#PXNAME} - {#SVNAME}] Status
+        type: DEPENDENT
+        key: haproxy.server.status[{#PXNAME},{#SVNAME}]
+        value_type: TEXT
+        master_item:
+          key: haproxy.raw.stats
+        preprocessing:
+        - type: JAVASCRIPT
+          parameters:
+          - "var rows = JSON.parse(value);\nfor (var i = 0; i < rows.length; i++)\
+            \ {\n  if (rows[i].pxname === \"{#PXNAME}\" && rows[i].svname === \"{#SVNAME}\"\
+            ) {\n    return rows[i].status;\n  }\n}\nreturn \"UNKNOWN\";"
+        tags:
+        - tag: Application
+          value: HAProxy Backend Servers
+        trigger_prototypes:
+        - uuid: 8f3c4e12d9a54b6791e8123456789012
+          expression: last(/Template HAProxy/haproxy.server.status[{#PXNAME},{#SVNAME}])="DOWN"
+          name: Backend Server {#SVNAME} ({#PXNAME}) is DOWN on {HOST.NAME}
+          priority: HIGH
+      - uuid: 8f3c4e12d9a54b6791e8123456789013
+        name: HAProxy Server [{#PXNAME} - {#SVNAME}] Check Response Time
+        type: DEPENDENT
+        key: haproxy.server.check_duration[{#PXNAME},{#SVNAME}]
+        value_type: FLOAT
+        units: ms
+        master_item:
+          key: haproxy.raw.stats
+        preprocessing:
+        - type: JAVASCRIPT
+          parameters:
+          - "var rows = JSON.parse(value);\nfor (var i = 0; i < rows.length; i++)\
+            \ {\n  if (rows[i].pxname === \"{#PXNAME}\" && rows[i].svname === \"{#SVNAME}\"\
+            ) {\n    return rows[i].check_duration;\n  }\n}\nreturn 0;"
+        tags:
+        - tag: Application
+          value: HAProxy Backend Servers
+        trigger_prototypes:
+        - uuid: 8f3c4e12d9a54b6791e8123456789014
+          expression: min(/Template HAProxy/haproxy.server.check_duration[{#PXNAME},{#SVNAME}],3m)>3000
+          name: Backend Server {#SVNAME} ({#PXNAME}) Response Time SLOW (> 3s)
+          priority: WARNING
+          dependencies:
+          - name: Backend Server {#SVNAME} ({#PXNAME}) Response Time VERY SLOW (>
+              6s)
+            expression: min(/Template HAProxy/haproxy.server.check_duration[{#PXNAME},{#SVNAME}],3m)>6000
+        - uuid: 8f3c4e12d9a54b6791e8123456789015
+          expression: min(/Template HAProxy/haproxy.server.check_duration[{#PXNAME},{#SVNAME}],3m)>6000
+          name: Backend Server {#SVNAME} ({#PXNAME}) Response Time VERY SLOW (> 6s)
+          priority: HIGH
+  triggers:
+  - uuid: f52da741b81e4d1ea5cc2e697b9e3014
+    expression: min(/Template HAProxy/haproxy.backend.rtime[web_app],3m)>5000
+      and last(/Template HAProxy/haproxy.backend.qcur[web_app])>0
+    name: Farm Web Response Time SLOW (> 5s and Queue > 0)
+    priority: HIGH
+    description: Thời gian phản hồi Farm Web vượt quá 5s liên tục 3 phút và có yêu
+      cầu dồn ứ hàng đợi

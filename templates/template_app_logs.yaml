@@ -1,0 +1,183 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+  - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+    name: Templates/Applications
+  templates:
+  - uuid: 58f6319d7c19409382885e80ea5ff7f5
+    template: Template App Logs
+    name: Template App Logs
+    description: Giám sát catalina.out các Tomcat Production bằng logrt (1 master/instance, dependent
+      item theo nhóm lỗi). Instance lấy từ /opt/scripts/tomcat_paths.txt.
+    groups:
+    - name: Templates/Applications
+    discovery_rules:
+    - uuid: c1453fc11c3643f5856ea27e3e90818b
+      name: Tomcat instance discovery (tomcat_paths.txt)
+      type: ZABBIX_ACTIVE
+      key: vfs.file.contents[/opt/scripts/tomcat_paths.txt]
+      delay: 10m
+      preprocessing:
+      - type: JAVASCRIPT
+        parameters:
+        - "var out = [];\nvalue.split(/\\r?\\n/).forEach(function (line) {\n  line = line.trim();\n  var\
+          \ m = line.match(/apache-tomcat-(node[0-9]+)$/);\n  if (m) {\n    out.push({'{#CATALINA_BASE}':\
+          \ line, '{#NODE}': m[1]});\n  }\n});\nreturn JSON.stringify(out);\n"
+      item_prototypes:
+      - uuid: ee881dce7deb45bd82546069b57e30c9
+        name: Catalina error lines {#NODE}
+        type: ZABBIX_ACTIVE
+        key: logrt["{#CATALINA_BASE}/logs/^catalina\.out$","OutOfMemoryError|JaninoRuntimeException|Cannot
+          allocate memory|Borrow failed|Pool empty|MaxActive reached|Cannot get a connection|Cannot create
+          PoolableConnectionFactory|Cannot create PollableConectionFactory|SQLNestedException|The Network
+          Adapter could not establish the connection|ORA-(00018|00020|00257|01017|02396|03113|03114|04031|12170|12514|12516|12519|12520|12537|12541|28000)|the
+          account is locked|Remote I/O error|Read-only file system|File can.t be saved|[Tt]oo many open
+          files|No space left on device",,500,skip,,,copytruncate]
+        delay: 5s
+        history: 7d
+        value_type: LOG
+        trends: '0'
+        description: Chỉ các dòng catalina.out khớp regex lỗi trọng tâm; maxlines=500 (agent phân tích
+          tối đa 10x/giây, BufferSize mặc định 1000 >= 2x maxlines); copytruncate khớp logrotate .
+        tags:
+        - tag: Application
+          value: App Logs
+      - uuid: 4b534551974d44c1a31329fa224c5417
+        name: Catalina OOM / Metaspace / Janino lines {#NODE}
+        type: DEPENDENT
+        key: app.catalina.oom[{#NODE}]
+        delay: '0'
+        history: 7d
+        preprocessing:
+        - type: MATCHES_REGEX
+          parameters:
+          - OutOfMemoryError|JaninoRuntimeException|Cannot allocate memory
+          error_handler: DISCARD_VALUE
+        - type: JAVASCRIPT
+          parameters:
+          - return 1;
+        master_item:
+          key: logrt["{#CATALINA_BASE}/logs/^catalina\.out$","OutOfMemoryError|JaninoRuntimeException|Cannot
+            allocate memory|Borrow failed|Pool empty|MaxActive reached|Cannot get a connection|Cannot
+            create PoolableConnectionFactory|Cannot create PollableConectionFactory|SQLNestedException|The
+            Network Adapter could not establish the connection|ORA-(00018|00020|00257|01017|02396|03113|03114|04031|12170|12514|12516|12519|12520|12537|12541|28000)|the
+            account is locked|Remote I/O error|Read-only file system|File can.t be saved|[Tt]oo many open
+            files|No space left on device",,500,skip,,,copytruncate]
+        tags:
+        - tag: Application
+          value: App Logs
+      - uuid: a86970542d0245efabb1e6dd5fd031d3
+        name: Catalina DB connection pool lines {#NODE}
+        type: DEPENDENT
+        key: app.catalina.dbpool[{#NODE}]
+        delay: '0'
+        history: 7d
+        preprocessing:
+        - type: MATCHES_REGEX
+          parameters:
+          - Borrow failed|Pool empty|MaxActive reached|Cannot get a connection|Cannot create PoolableConnectionFactory|Cannot
+            create PollableConectionFactory|SQLNestedException|The Network Adapter could not establish
+            the connection
+          error_handler: DISCARD_VALUE
+        - type: JAVASCRIPT
+          parameters:
+          - return 1;
+        master_item:
+          key: logrt["{#CATALINA_BASE}/logs/^catalina\.out$","OutOfMemoryError|JaninoRuntimeException|Cannot
+            allocate memory|Borrow failed|Pool empty|MaxActive reached|Cannot get a connection|Cannot
+            create PoolableConnectionFactory|Cannot create PollableConectionFactory|SQLNestedException|The
+            Network Adapter could not establish the connection|ORA-(00018|00020|00257|01017|02396|03113|03114|04031|12170|12514|12516|12519|12520|12537|12541|28000)|the
+            account is locked|Remote I/O error|Read-only file system|File can.t be saved|[Tt]oo many open
+            files|No space left on device",,500,skip,,,copytruncate]
+        tags:
+        - tag: Application
+          value: App Logs
+      - uuid: 368496742db3467cb71dc2160267d30e
+        name: Catalina Oracle infrastructure ORA- lines {#NODE}
+        type: DEPENDENT
+        key: app.catalina.ora[{#NODE}]
+        delay: '0'
+        history: 7d
+        preprocessing:
+        - type: MATCHES_REGEX
+          parameters:
+          - ORA-(00018|00020|00257|01017|02396|03113|03114|04031|12170|12514|12516|12519|12520|12537|12541|28000)|the
+            account is locked
+          error_handler: DISCARD_VALUE
+        - type: JAVASCRIPT
+          parameters:
+          - return 1;
+        master_item:
+          key: logrt["{#CATALINA_BASE}/logs/^catalina\.out$","OutOfMemoryError|JaninoRuntimeException|Cannot
+            allocate memory|Borrow failed|Pool empty|MaxActive reached|Cannot get a connection|Cannot
+            create PoolableConnectionFactory|Cannot create PollableConectionFactory|SQLNestedException|The
+            Network Adapter could not establish the connection|ORA-(00018|00020|00257|01017|02396|03113|03114|04031|12170|12514|12516|12519|12520|12537|12541|28000)|the
+            account is locked|Remote I/O error|Read-only file system|File can.t be saved|[Tt]oo many open
+            files|No space left on device",,500,skip,,,copytruncate]
+        tags:
+        - tag: Application
+          value: App Logs
+      - uuid: 22e204586a1b46f78579b3609ed50fb6
+        name: Catalina File system / file descriptors lines {#NODE}
+        type: DEPENDENT
+        key: app.catalina.fs[{#NODE}]
+        delay: '0'
+        history: 7d
+        preprocessing:
+        - type: MATCHES_REGEX
+          parameters:
+          - Remote I/O error|Read-only file system|File can.t be saved|[Tt]oo many open files|No space
+            left on device
+          error_handler: DISCARD_VALUE
+        - type: JAVASCRIPT
+          parameters:
+          - return 1;
+        master_item:
+          key: logrt["{#CATALINA_BASE}/logs/^catalina\.out$","OutOfMemoryError|JaninoRuntimeException|Cannot
+            allocate memory|Borrow failed|Pool empty|MaxActive reached|Cannot get a connection|Cannot
+            create PoolableConnectionFactory|Cannot create PollableConectionFactory|SQLNestedException|The
+            Network Adapter could not establish the connection|ORA-(00018|00020|00257|01017|02396|03113|03114|04031|12170|12514|12516|12519|12520|12537|12541|28000)|the
+            account is locked|Remote I/O error|Read-only file system|File can.t be saved|[Tt]oo many open
+            files|No space left on device",,500,skip,,,copytruncate]
+        tags:
+        - tag: Application
+          value: App Logs
+      trigger_prototypes:
+      - uuid: 5eded53f835844b793f9b2c5fdc01a67
+        expression: count(/Template App Logs/app.catalina.oom[{#NODE}],5m)>=1
+        name: Catalina OOM / Metaspace / Janino errors >= 1 in 5m on {HOST.NAME} {#NODE}
+        priority: HIGH
+        description: Đếm dòng khớp nhóm 'OOM / Metaspace / Janino' trong catalina.out của {#CATALINA_BASE}
+          trong 5 phút. Tự đóng khi 5 phút không còn dòng khớp.
+        manual_close: 'YES'
+      - uuid: 75ac7185d14f49289895f2373ac7368d
+        expression: count(/Template App Logs/app.catalina.dbpool[{#NODE}],5m)>=20
+        name: Catalina DB connection pool errors >= 20 in 5m on {HOST.NAME} {#NODE}
+        priority: HIGH
+        description: Đếm dòng khớp nhóm 'DB connection pool' trong catalina.out của {#CATALINA_BASE} trong
+          5 phút. Tự đóng khi 5 phút không còn dòng khớp.
+        manual_close: 'YES'
+      - uuid: 9d0d86b6f79e4fc392ac141330bb6898
+        expression: count(/Template App Logs/app.catalina.dbpool[{#NODE}],5m)>=1
+        name: Catalina DB connection pool errors >= 1 in 5m on {HOST.NAME} {#NODE}
+        priority: WARNING
+        description: Đếm dòng khớp nhóm 'DB connection pool' trong catalina.out của {#CATALINA_BASE} trong
+          5 phút. Tự đóng khi 5 phút không còn dòng khớp.
+        manual_close: 'YES'
+        dependencies:
+        - name: Catalina DB connection pool errors >= 20 in 5m on {HOST.NAME} {#NODE}
+          expression: count(/Template App Logs/app.catalina.dbpool[{#NODE}],5m)>=20
+      - uuid: 01b753d05f6246458b3212c2c3b29341
+        expression: count(/Template App Logs/app.catalina.ora[{#NODE}],5m)>=1
+        name: Catalina Oracle infrastructure ORA- errors >= 1 in 5m on {HOST.NAME} {#NODE}
+        priority: HIGH
+        description: Đếm dòng khớp nhóm 'Oracle infrastructure ORA-' trong catalina.out của {#CATALINA_BASE}
+          trong 5 phút. Tự đóng khi 5 phút không còn dòng khớp.
+        manual_close: 'YES'
+      - uuid: 07c1c4eff4a54fdf90d00bf14d37ed7a
+        expression: count(/Template App Logs/app.catalina.fs[{#NODE}],5m)>=1
+        name: Catalina File system / file descriptors errors >= 1 in 5m on {HOST.NAME} {#NODE}
+        priority: HIGH
+        description: Đếm dòng khớp nhóm 'File system / file descriptors' trong catalina.out của {#CATALINA_BASE}
+          trong 5 phút. Tự đóng khi 5 phút không còn dòng khớp.
+        manual_close: 'YES'

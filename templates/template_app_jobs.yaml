@@ -1,0 +1,75 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: b82fc561a84d4e03b4cc3d507b8e2901
+      template: 'Template Background Jobs'
+      name: 'Template Background Jobs'
+      description: 'Giám sát tiến trình Job Scheduler, Edoc liên thông và dung lượng lưu trữ NFS trên máy chủ server'
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: b82fc561a84d4e03b4cc3d507b8e2902
+          name: 'Process Quartz Job Scheduler'
+          type: ZABBIX_ACTIVE
+          key: 'proc.num[,,,QuartzJobRun.jar]'
+          delay: 1m
+          value_type: UNSIGNED
+          tags:
+            - tag: Application
+              value: 'Background Services'
+          triggers:
+            - uuid: b82fc561a84d4e03b4cc3d507b8e2903
+              expression: 'last(/Template Background Jobs/proc.num[,,,QuartzJobRun.jar])=0'
+              name: 'Quartz Job Scheduler process is NOT RUNNING on {HOST.NAME}'
+              priority: DISASTER
+              description: 'Tiến trình lập lịch chạy ngầm QuartzJobRun.jar bị dừng trên máy chủ {HOST.NAME}'
+        - uuid: b82fc561a84d4e03b4cc3d507b8e2904
+          name: 'Process Edoc Service'
+          type: ZABBIX_ACTIVE
+          key: 'proc.num[,,,vsc.admin.AppManager]'
+          delay: 1m
+          value_type: UNSIGNED
+          tags:
+            - tag: Application
+              value: 'Background Services'
+          triggers:
+            - uuid: b82fc561a84d4e03b4cc3d507b8e2905
+              expression: 'last(/Template Background Jobs/proc.num[,,,vsc.admin.AppManager])=0'
+              name: 'Edoc Service process is NOT RUNNING on {HOST.NAME}'
+              priority: DISASTER
+              description: 'Tiến trình liên thông văn bản edoc_service (vsc.admin.AppManager) bị dừng trên máy chủ {HOST.NAME}'
+        - uuid: b82fc561a84d4e03b4cc3d507b8e2906
+          name: 'NFS Share /mount Free Space'
+          type: ZABBIX_ACTIVE
+          key: 'vfs.fs.size[/mount,free]'
+          delay: 5m
+          value_type: UNSIGNED
+          units: B
+          tags:
+            - tag: Application
+              value: 'NFS Storage'
+          triggers:
+            - uuid: b82fc561a84d4e03b4cc3d507b8e2907
+              expression: 'last(/Template Background Jobs/vfs.fs.size[/mount,free])<=100G'
+              name: 'NFS Share /mount free space is CRITICAL (<= 100GB)'
+              priority: DISASTER
+              description: 'Dung lượng trống của vùng đĩa dùng chung /mount trên {HOST.NAME} còn dưới 100GB'
+            - uuid: b82fc561a84d4e03b4cc3d507b8e2908
+              expression: 'last(/Template Background Jobs/vfs.fs.size[/mount,free])<=200G'
+              name: 'NFS Share /mount free space is LOW (<= 200GB)'
+              priority: HIGH
+              description: 'Dung lượng trống của vùng đĩa dùng chung /mount trên {HOST.NAME} còn dưới 200GB'
+              dependencies:
+                - name: 'NFS Share /mount free space is CRITICAL (<= 100GB)'
+                  expression: 'last(/Template Background Jobs/vfs.fs.size[/mount,free])<=100G'
+            - uuid: b82fc561a84d4e03b4cc3d507b8e2909
+              expression: 'last(/Template Background Jobs/vfs.fs.size[/mount,free])<=400G'
+              name: 'NFS Share /mount free space WARNING (<= 400GB)'
+              priority: WARNING
+              description: 'Dung lượng trống của vùng đĩa dùng chung /mount trên {HOST.NAME} còn dưới 400GB'
+              dependencies:
+                - name: 'NFS Share /mount free space is LOW (<= 200GB)'
+                  expression: 'last(/Template Background Jobs/vfs.fs.size[/mount,free])<=200G'

@@ -1,0 +1,234 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: e74ac821b93f4e2fa6dd3e718c0f4001
+      template: 'Template Oracle RAC'
+      name: 'Template Oracle RAC'
+      description: 'Giám sát 7 chỉ số Native an toàn cho Oracle RAC 19c Production (loại trừ tablespace discovery)'
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: e74ac821b93f4e2fa6dd3e718c0f4002
+          name: 'Oracle Instance Ping'
+          type: ZABBIX_ACTIVE
+          key: oracle.ping
+          delay: 1m
+          value_type: UNSIGNED
+          tags:
+            - tag: Application
+              value: 'Oracle Instance'
+          triggers:
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4003
+              expression: 'last(/Template Oracle RAC/oracle.ping)=0'
+              name: 'Oracle Instance is DOWN on {HOST.NAME}'
+              priority: DISASTER
+        - uuid: e74ac821b93f4e2fa6dd3e718c0f4004
+          name: 'Oracle Listener Port 1521'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.listen[1521]'
+          delay: 1m
+          value_type: UNSIGNED
+          tags:
+            - tag: Application
+              value: 'Oracle Listener'
+          triggers:
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4005
+              expression: 'last(/Template Oracle RAC/net.tcp.listen[1521])=0'
+              name: 'Oracle Listener Port 1521 is DOWN on {HOST.NAME}'
+              priority: HIGH
+        - uuid: e74ac821b93f4e2fa6dd3e718c0f4026
+          name: 'Oracle Get Sessions Stats'
+          type: ZABBIX_ACTIVE
+          key: oracle.sessions.stats
+          delay: 1m
+          history: 1h
+          trends: '0'
+          value_type: TEXT
+          tags:
+            - tag: Application
+              value: 'Oracle Sessions'
+        - uuid: e74ac821b93f4e2fa6dd3e718c0f4006
+          name: 'Oracle Active Sessions'
+          type: DEPENDENT
+          key: oracle.session_active_user
+          delay: '0'
+          value_type: UNSIGNED
+          master_item:
+            key: oracle.sessions.stats
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.active_user
+          tags:
+            - tag: Application
+              value: 'Oracle Sessions'
+          triggers:
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4007
+              expression: 'last(/Template Oracle RAC/oracle.session_active_user)>250'
+              name: 'Oracle Active Sessions CRITICAL (> 250) on {HOST.NAME}'
+              priority: DISASTER
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4008
+              expression: 'last(/Template Oracle RAC/oracle.session_active_user)>150'
+              name: 'Oracle Active Sessions HIGH (> 150) on {HOST.NAME}'
+              priority: HIGH
+              dependencies:
+                - name: 'Oracle Active Sessions CRITICAL (> 250) on {HOST.NAME}'
+                  expression: 'last(/Template Oracle RAC/oracle.session_active_user)>250'
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4009
+              expression: 'last(/Template Oracle RAC/oracle.session_active_user)>80'
+              name: 'Oracle Active Sessions WARNING (> 80) on {HOST.NAME}'
+              priority: WARNING
+              dependencies:
+                - name: 'Oracle Active Sessions HIGH (> 150) on {HOST.NAME}'
+                  expression: 'last(/Template Oracle RAC/oracle.session_active_user)>150'
+        - uuid: e74ac821b93f4e2fa6dd3e718c0f4010
+          name: 'Oracle Process Limit Usage %'
+          type: ZABBIX_ACTIVE
+          key: oracle.proc.stats
+          delay: 1m
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  return (data.proc_num * 100 / 5000).toFixed(2);
+          tags:
+            - tag: Application
+              value: 'Oracle Processes'
+          triggers:
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4011
+              expression: 'last(/Template Oracle RAC/oracle.proc.stats)>=90'
+              name: 'Oracle Process Count CRITICAL (>= 90% of limit)'
+              priority: DISASTER
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4012
+              expression: 'last(/Template Oracle RAC/oracle.proc.stats)>=85'
+              name: 'Oracle Process Count HIGH (>= 85% of limit)'
+              priority: HIGH
+              dependencies:
+                - name: 'Oracle Process Count CRITICAL (>= 90% of limit)'
+                  expression: 'last(/Template Oracle RAC/oracle.proc.stats)>=90'
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4013
+              expression: 'last(/Template Oracle RAC/oracle.proc.stats)>=75'
+              name: 'Oracle Process Count WARNING (>= 75% of limit)'
+              priority: WARNING
+              dependencies:
+                - name: 'Oracle Process Count HIGH (>= 85% of limit)'
+                  expression: 'last(/Template Oracle RAC/oracle.proc.stats)>=85'
+        - uuid: e74ac821b93f4e2fa6dd3e718c0f4014
+          name: 'Oracle Fast Recovery Area (FRA) %'
+          type: ZABBIX_ACTIVE
+          key: oracle.fra.stats
+          delay: 10m
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  var used = 100 - (data.usable_pct || 0);
+                  return used.toFixed(2);
+          tags:
+            - tag: Application
+              value: 'Oracle Storage'
+          triggers:
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4015
+              expression: 'last(/Template Oracle RAC/oracle.fra.stats)>=92'
+              name: 'Oracle FRA Space CRITICAL (>= 92%)'
+              priority: DISASTER
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4016
+              expression: 'last(/Template Oracle RAC/oracle.fra.stats)>=88'
+              name: 'Oracle FRA Space HIGH (>= 88%)'
+              priority: HIGH
+              dependencies:
+                - name: 'Oracle FRA Space CRITICAL (>= 92%)'
+                  expression: 'last(/Template Oracle RAC/oracle.fra.stats)>=92'
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4017
+              expression: 'last(/Template Oracle RAC/oracle.fra.stats)>=80'
+              name: 'Oracle FRA Space WARNING (>= 80%)'
+              priority: WARNING
+              dependencies:
+                - name: 'Oracle FRA Space HIGH (>= 88%)'
+                  expression: 'last(/Template Oracle RAC/oracle.fra.stats)>=88'
+        - uuid: e74ac821b93f4e2fa6dd3e718c0f4018
+          name: 'Oracle ASM Diskgroup Used %'
+          type: ZABBIX_ACTIVE
+          key: oracle.diskgroups.stats
+          delay: 10m
+          value_type: FLOAT
+          units: '%'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var arr = JSON.parse(value);
+                  var maxUsed = 0;
+                  for (var i = 0; i < arr.length; i++) {
+                      for (var k in arr[i]) {
+                          if (arr[i][k].used_pct && arr[i][k].used_pct > maxUsed) {
+                              maxUsed = arr[i][k].used_pct;
+                          }
+                      }
+                  }
+                  return maxUsed.toFixed(2);
+          tags:
+            - tag: Application
+              value: 'Oracle Storage'
+          triggers:
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4019
+              expression: 'last(/Template Oracle RAC/oracle.diskgroups.stats)>=93'
+              name: 'Oracle ASM Diskgroup CRITICAL (>= 93% used)'
+              priority: DISASTER
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4020
+              expression: 'last(/Template Oracle RAC/oracle.diskgroups.stats)>=88'
+              name: 'Oracle ASM Diskgroup HIGH (>= 88% used)'
+              priority: HIGH
+              dependencies:
+                - name: 'Oracle ASM Diskgroup CRITICAL (>= 93% used)'
+                  expression: 'last(/Template Oracle RAC/oracle.diskgroups.stats)>=93'
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4021
+              expression: 'last(/Template Oracle RAC/oracle.diskgroups.stats)>=80'
+              name: 'Oracle ASM Diskgroup WARNING (>= 80% used)'
+              priority: WARNING
+              dependencies:
+                - name: 'Oracle ASM Diskgroup HIGH (>= 88% used)'
+                  expression: 'last(/Template Oracle RAC/oracle.diskgroups.stats)>=88'
+        - uuid: e74ac821b93f4e2fa6dd3e718c0f4022
+          name: 'Oracle Long Time Locked Sessions'
+          type: DEPENDENT
+          key: oracle.session_long_time_locked
+          delay: '0'
+          value_type: UNSIGNED
+          master_item:
+            key: oracle.sessions.stats
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.long_time_locked
+          tags:
+            - tag: Application
+              value: 'Oracle Locks'
+          triggers:
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4023
+              expression: 'last(/Template Oracle RAC/oracle.session_long_time_locked)>10'
+              name: 'Oracle Long Time Locked Sessions CRITICAL (> 10)'
+              priority: DISASTER
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4024
+              expression: 'last(/Template Oracle RAC/oracle.session_long_time_locked)>5'
+              name: 'Oracle Long Time Locked Sessions HIGH (> 5)'
+              priority: HIGH
+              dependencies:
+                - name: 'Oracle Long Time Locked Sessions CRITICAL (> 10)'
+                  expression: 'last(/Template Oracle RAC/oracle.session_long_time_locked)>10'
+            - uuid: e74ac821b93f4e2fa6dd3e718c0f4025
+              expression: 'last(/Template Oracle RAC/oracle.session_long_time_locked)>0'
+              name: 'Oracle Long Time Locked Sessions WARNING (> 0)'
+              priority: WARNING
+              dependencies:
+                - name: 'Oracle Long Time Locked Sessions HIGH (> 5)'
+                  expression: 'last(/Template Oracle RAC/oracle.session_long_time_locked)>5'

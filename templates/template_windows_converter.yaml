@@ -1,0 +1,68 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: 2e7757175a0540cfbbe9dd7aa454f53f
+      template: 'Template Windows Document Converter'
+      name: 'Template Windows Document Converter'
+      description: 'Giám sát phát hiện tiến trình Word/Excel/DocumentConverter chạy quá thời gian (treo) và tài nguyên OS trên 4 máy chủ Windows Converter'
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: 650c5be8c3864c51ab7151efc8518b84
+          name: 'Converterer Process Max Runtime'
+          type: ZABBIX_ACTIVE
+          key: converter.process.max_runtime
+          units: s
+          tags:
+            - tag: Application
+              value: 'Document Converterer Service'
+          triggers:
+            - uuid: e21d4de21b404b2992bb15a99c968b92
+              expression: 'last(/Template Windows Document Converter/converter.process.max_runtime)>=600'
+              name: 'Converterer Process stuck CRITICAL on {HOST.NAME} (Runtime >= 10m)'
+              priority: DISASTER
+              description: 'Tiến trình winword.exe / excel.exe / DocumentConverter.exe chạy liên tục quá 10 phút trên {HOST.NAME}'
+            - uuid: 8885d70fea1e476aa4a20d924df759b0
+              expression: 'last(/Template Windows Document Converter/converter.process.max_runtime)>=300'
+              name: 'Converterer Process stuck HIGH on {HOST.NAME} (Runtime >= 5m)'
+              priority: HIGH
+              description: 'Tiến trình winword.exe / excel.exe / DocumentConverter.exe chạy liên tục quá 5 phút trên {HOST.NAME}'
+              dependencies:
+                - name: 'Converterer Process stuck CRITICAL on {HOST.NAME} (Runtime >= 10m)'
+                  expression: 'last(/Template Windows Document Converter/converter.process.max_runtime)>=600'
+            - uuid: 2c0728ae5a1e4f6c8ab62dd65017b6b5
+              expression: 'last(/Template Windows Document Converter/converter.process.max_runtime)>=180'
+              name: 'Converterer Process stuck WARNING on {HOST.NAME} (Runtime >= 3m)'
+              priority: WARNING
+              description: 'Tiến trình winword.exe / excel.exe / DocumentConverter.exe chạy liên tục quá 3 phút trên {HOST.NAME}'
+              dependencies:
+                - name: 'Converterer Process stuck HIGH on {HOST.NAME} (Runtime >= 5m)'
+                  expression: 'last(/Template Windows Document Converter/converter.process.max_runtime)>=300'
+        - uuid: 8391973aaacf4335a97a0d1c01ff11e7
+          name: 'Converterer Web API Port 80 Listening'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.listen[80]'
+          tags:
+            - tag: Application
+              value: 'Document Converterer Service'
+          triggers:
+            - uuid: ffb9206bedfb41b8950e64cc3b13ba17
+              expression: 'last(/Template Windows Document Converter/net.tcp.listen[80])=0'
+              name: 'Converterer Web API Port 80 is DOWN on {HOST.NAME}'
+              priority: DISASTER
+        - uuid: 606bbe845f2b4dcca325069645814f23
+          name: 'IIS Web Service (W3SVC)'
+          type: ZABBIX_ACTIVE
+          key: 'service.info[W3SVC,state]'
+          tags:
+            - tag: Application
+              value: 'Document Converterer Service'
+          triggers:
+            - uuid: 5a2063a6bb9a43ccb3592f87257bcfa2
+              expression: 'last(/Template Windows Document Converter/service.info[W3SVC,state])<>0'
+              name: 'IIS Web Service is NOT RUNNING on {HOST.NAME}'
+              priority: DISASTER
+

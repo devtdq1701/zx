@@ -1,0 +1,56 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: fd317870138a4fc0909db65bd11e7801
+      template: 'Template HTTP VIP Health Check'
+      name: 'Template HTTP VIP Health Check'
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: 15bfdc73e64242709a4c636bb9fc03f6
+          name: 'VIP Converterer API URL'
+          type: HTTP_AGENT
+          key: 'vip.http.check[converterer_vip]'
+          url: 'http://{$CONVERTER.VIP.IP}:80'
+          headers:
+            - name: Connection
+              value: close
+          retrieve_mode: HEADERS
+          request_method: HEAD
+          tags:
+            - tag: Application
+              value: 'VIP HTTP'
+          triggers:
+            - uuid: 61cb9fea60db4ec99f688effbcd7c886
+              expression: 'last(/Template HTTP VIP Health Check/vip.http.check[converterer_vip])<>200 and max(/Template HTTP VIP Health Check/vip.http.check[converterer_vip],2m)<>200'
+              name: 'VIP Converterer API URL is DOWN'
+              priority: DISASTER
+        - uuid: f873a6c7a5bf4dd790e8157b713fe9dd
+          name: 'VIP External Service Main URL'
+          type: HTTP_AGENT
+          key: 'vip.http.check[main_url]'
+          url: 'https://{$SERVICE.VIP.DOMAIN}/health'
+          headers:
+            - name: Connection
+              value: close
+          retrieve_mode: HEADERS
+          request_method: HEAD
+          tags:
+            - tag: Application
+              value: 'VIP HTTP'
+          triggers:
+            - uuid: 14f54fa58ebd4d048f0129fa231b1c97
+              expression: 'last(/Template HTTP VIP Health Check/vip.http.check[main_url])<>200 and max(/Template HTTP VIP Health Check/vip.http.check[main_url],2m)<>200'
+              name: 'VIP External Service Main URL is DOWN'
+              priority: DISASTER
+      macros:
+        - macro: '{$CONVERTER.VIP.IP}'
+          value: 192.0.2.26
+          description: 'IP Virtual Server Converterer Web API'
+        - macro: '{$SERVICE.VIP.DOMAIN}'
+          value: app.example.com
+          description: 'Domain External App F5'
+

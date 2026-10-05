@@ -1,0 +1,181 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: d91fa450b73c4f92a3bb2c496a7d1801
+      template: 'Template Web App'
+      name: 'Template Web App'
+      description: 'Giám sát 4 cổng Tomcat Web (3080, 4080, 5080, 6080) và kết nối NFS từ 8 node App'
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: d91fa450b73c4f92a3bb2c496a7d1802
+          name: 'Tomcat Web node2 (Port 3080)'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.listen[3080]'
+          tags:
+            - tag: Application
+              value: 'Web App'
+          triggers:
+            - uuid: d91fa450b73c4f92a3bb2c496a7d1803
+              expression: 'last(/Template Web App/net.tcp.listen[3080])=0 and max(/Template Web App/net.tcp.listen[3080],2m)=0'
+              name: 'Tomcat Web node2 is DOWN on {HOST.NAME} (Port 3080)'
+              priority: DISASTER
+              description: 'Cổng 3080 của Tomcat Web node2 không lắng nghe liên tiếp 2 phút'
+        - uuid: d91fa450b73c4f92a3bb2c496a7d1804
+          name: 'Tomcat Web node3 (Port 4080)'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.listen[4080]'
+          tags:
+            - tag: Application
+              value: 'Web App'
+          triggers:
+            - uuid: d91fa450b73c4f92a3bb2c496a7d1805
+              expression: 'last(/Template Web App/net.tcp.listen[4080])=0 and max(/Template Web App/net.tcp.listen[4080],2m)=0'
+              name: 'Tomcat Web node3 is DOWN on {HOST.NAME} (Port 4080)'
+              priority: DISASTER
+              description: 'Cổng 4080 của Tomcat Web node3 không lắng nghe liên tiếp 2 phút'
+        - uuid: d91fa450b73c4f92a3bb2c496a7d1806
+          name: 'Tomcat Web node4 (Port 5080)'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.listen[5080]'
+          tags:
+            - tag: Application
+              value: 'Web App'
+          triggers:
+            - uuid: d91fa450b73c4f92a3bb2c496a7d1807
+              expression: 'last(/Template Web App/net.tcp.listen[5080])=0 and max(/Template Web App/net.tcp.listen[5080],2m)=0'
+              name: 'Tomcat Web node4 is DOWN on {HOST.NAME} (Port 5080)'
+              priority: DISASTER
+              description: 'Cổng 5080 của Tomcat Web node4 không lắng nghe liên tiếp 2 phút'
+        - uuid: d91fa450b73c4f92a3bb2c496a7d1808
+          name: 'Tomcat Web node5 (Port 6080)'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.listen[6080]'
+          tags:
+            - tag: Application
+              value: 'Web App'
+          triggers:
+            - uuid: d91fa450b73c4f92a3bb2c496a7d1809
+              expression: 'last(/Template Web App/net.tcp.listen[6080])=0 and max(/Template Web App/net.tcp.listen[6080],2m)=0'
+              name: 'Tomcat Web node5 is DOWN on {HOST.NAME} (Port 6080)'
+              priority: DISASTER
+              description: 'Cổng 6080 của Tomcat Web node5 không lắng nghe liên tiếp 2 phút'
+        - uuid: d91fa450b73c4f92a3bb2c496a7d1810
+          name: 'NFS Server Port 111 (rpcbind)'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.port[{$NFS.SERVER.IP},111]'
+          tags:
+            - tag: Application
+              value: 'NFS Storage'
+          triggers:
+            - uuid: d91fa450b73c4f92a3bb2c496a7d1811
+              expression: 'last(/Template Web App/net.tcp.port[{$NFS.SERVER.IP},111])=0 and max(/Template Web App/net.tcp.port[{$NFS.SERVER.IP},111],2m)=0'
+              name: 'NFS Server Port 111 unreachable from {HOST.NAME}'
+              priority: HIGH
+              description: 'Mất kết nối từ App node tới cổng rpcbind 111 của NFS Server'
+        - uuid: d91fa450b73c4f92a3bb2c496a7d1812
+          name: 'NFS Server Port 2049 (nfsd)'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.port[{$NFS.SERVER.IP},2049]'
+          tags:
+            - tag: Application
+              value: 'NFS Storage'
+          triggers:
+            - uuid: d91fa450b73c4f92a3bb2c496a7d1813
+              expression: 'last(/Template Web App/net.tcp.port[{$NFS.SERVER.IP},2049])=0 and max(/Template Web App/net.tcp.port[{$NFS.SERVER.IP},2049],2m)=0'
+              name: 'NFS Server Port 2049 unreachable from {HOST.NAME}'
+              priority: HIGH
+              description: 'Mất kết nối từ App node tới cổng nfsd 2049 của NFS Server'
+        - uuid: d91fa450b73c4f92a3bb2c496a7d1814
+          name: 'Mount point /mount check'
+          type: ZABBIX_ACTIVE
+          key: 'vfs.file.exists[/mount,dir]'
+          tags:
+            - tag: Application
+              value: 'NFS Storage'
+          triggers:
+            - uuid: d91fa450b73c4f92a3bb2c496a7d1815
+              expression: 'last(/Template Web App/vfs.file.exists[/mount,dir])=0'
+              name: 'NFS mount point /mount missing on {HOST.NAME}'
+              priority: HIGH
+              description: 'Thư mục gắn kết NFS /mount không tồn tại hoặc bị unmount trên {HOST.NAME}'
+        - uuid: ea4c0eaf277e40889ba8e0ec2066a7fd
+          name: 'Tomcat Web node2 HTTP Check (Port 3080)'
+          type: HTTP_AGENT
+          key: 'web.http.check[3080]'
+          url: 'http://{HOST.CONN}:3080/health'
+          headers:
+            - name: Connection
+              value: close
+          retrieve_mode: HEADERS
+          request_method: HEAD
+          tags:
+            - tag: Application
+              value: 'Web App HTTP'
+          triggers:
+            - uuid: 5e427db7d33145d0a7ad94051c63cb71
+              expression: 'last(/Template Web App/web.http.check[3080])<>200 and max(/Template Web App/web.http.check[3080],2m)<>200'
+              name: 'Tomcat Web node2 HTTP Check FAILED on {HOST.NAME} (Port 3080)'
+              priority: DISASTER
+        - uuid: 8529667fefd54ab99651662155cc7540
+          name: 'Tomcat Web node3 HTTP Check (Port 4080)'
+          type: HTTP_AGENT
+          key: 'web.http.check[4080]'
+          url: 'http://{HOST.CONN}:4080/health'
+          headers:
+            - name: Connection
+              value: close
+          retrieve_mode: HEADERS
+          request_method: HEAD
+          tags:
+            - tag: Application
+              value: 'Web App HTTP'
+          triggers:
+            - uuid: e5cb96915a1e40d390a11c11bcc4bf8c
+              expression: 'last(/Template Web App/web.http.check[4080])<>200 and max(/Template Web App/web.http.check[4080],2m)<>200'
+              name: 'Tomcat Web node3 HTTP Check FAILED on {HOST.NAME} (Port 4080)'
+              priority: DISASTER
+        - uuid: 9d7d07e81d7343fb8b72b0ffa44ebbce
+          name: 'Tomcat Web node4 HTTP Check (Port 5080)'
+          type: HTTP_AGENT
+          key: 'web.http.check[5080]'
+          url: 'http://{HOST.CONN}:5080/health'
+          headers:
+            - name: Connection
+              value: close
+          retrieve_mode: HEADERS
+          request_method: HEAD
+          tags:
+            - tag: Application
+              value: 'Web App HTTP'
+          triggers:
+            - uuid: 200dbd73ea7d404d88f11e7edc456d05
+              expression: 'last(/Template Web App/web.http.check[5080])<>200 and max(/Template Web App/web.http.check[5080],2m)<>200'
+              name: 'Tomcat Web node4 HTTP Check FAILED on {HOST.NAME} (Port 5080)'
+              priority: DISASTER
+        - uuid: c19f644195a94cec8e7bae8accc2e6af
+          name: 'Tomcat Web node5 HTTP Check (Port 6080)'
+          type: HTTP_AGENT
+          key: 'web.http.check[6080]'
+          url: 'http://{HOST.CONN}:6080/health'
+          headers:
+            - name: Connection
+              value: close
+          retrieve_mode: HEADERS
+          request_method: HEAD
+          tags:
+            - tag: Application
+              value: 'Web App HTTP'
+          triggers:
+            - uuid: e374b9d2410c4e7d8b624b8211f28088
+              expression: 'last(/Template Web App/web.http.check[6080])<>200 and max(/Template Web App/web.http.check[6080],2m)<>200'
+              name: 'Tomcat Web node5 HTTP Check FAILED on {HOST.NAME} (Port 6080)'
+              priority: DISASTER
+      macros:
+        - macro: '{$NFS.SERVER.IP}'
+          value: 192.0.2.11
+          description: 'IP NFS Server'
+

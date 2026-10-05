@@ -1,0 +1,55 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: 8aa7f0e477a248179ebebdf448f72556
+      name: Templates/Applications
+  templates:
+    - uuid: 7aa0b7d645044ade934cac203e486582
+      template: 'Template NFS Server'
+      name: 'Template NFS Server'
+      description: 'Giám sát dịch vụ nfsd, độ trễ await, bão hòa %util đĩa sdb, CPU IOWait và dung lượng lưu trữ trên NFS Server'
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: bad979c6499744199800e4615cfa6bff
+          name: 'NFS Daemon (nfsd) Worker Count'
+          type: ZABBIX_ACTIVE
+          key: 'proc.num[,,,nfsd]'
+          delay: 1m
+          value_type: UNSIGNED
+          tags:
+            - tag: Application
+              value: 'NFS Service'
+          triggers:
+            - uuid: c54759ed024040449763a0cdafd8188d
+              expression: 'last(/Template NFS Server/proc.num[,,,nfsd])=0'
+              name: 'NFS Daemon nfsd is NOT RUNNING on {HOST.NAME}'
+              priority: DISASTER
+        - uuid: 636ac1caef7d4de3a3c5406736a2be0f
+          name: 'NFS Daemon Port 2049 Listening'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.listen[2049]'
+          delay: 1m
+          value_type: UNSIGNED
+          tags:
+            - tag: Application
+              value: 'NFS Service'
+          triggers:
+            - uuid: 04e104d65f214076b99f77f6c9debd31
+              expression: 'last(/Template NFS Server/net.tcp.listen[2049])=0'
+              name: 'Port 2049 (NFS) is NOT LISTENING on {HOST.NAME}'
+              priority: DISASTER
+        - uuid: adf3d153c9504d46880e22dcebfa4a53
+          name: 'RPCBind Port 111 Listening'
+          type: ZABBIX_ACTIVE
+          key: 'net.tcp.listen[111]'
+          delay: 1m
+          value_type: UNSIGNED
+          tags:
+            - tag: Application
+              value: 'NFS Service'
+          triggers:
+            - uuid: 02d0bc7247494fe69fdfbd6a432562d7
+              expression: 'last(/Template NFS Server/net.tcp.listen[111])=0'
+              name: 'Port 111 (RPCBind) is NOT LISTENING on {HOST.NAME}'
+              priority: DISASTER
