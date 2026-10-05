@@ -41,13 +41,16 @@ func (c *Client) DownloadCombinedGraph(
 		Timeout:   60 * time.Second,
 	}
 
-	u, err := url.Parse(c.profile.URL)
-	if err != nil {
-		return fmt.Errorf("parsing profile URL: %w", err)
-	}
-	serverBase := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-	if dir := path.Dir(u.Path); dir != "/" && dir != "." {
-		serverBase += dir
+	serverBase := strings.TrimRight(c.profile.URL, "/")
+	if strings.HasSuffix(serverBase, ".php") {
+		u, err := url.Parse(serverBase)
+		if err == nil {
+			dir := path.Dir(u.Path)
+			if dir == "/" || dir == "." {
+				dir = ""
+			}
+			serverBase = fmt.Sprintf("%s://%s%s", u.Scheme, u.Host, dir)
+		}
 	}
 
 	// 1. Login to web frontend if username/password are provided
