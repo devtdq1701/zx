@@ -84,10 +84,10 @@ func TestNormalizeRPCURL(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"http://10.159.28.169", "http://10.159.28.169/api_jsonrpc.php"},
-		{"http://10.159.28.169/", "http://10.159.28.169/api_jsonrpc.php"},
-		{"https://10.120.33.54/gsm.php", "https://10.120.33.54/api_jsonrpc.php"},
-		{"https://10.120.33.54/index.php", "https://10.120.33.54/api_jsonrpc.php"},
+		{"http://192.0.2.10", "http://192.0.2.10/api_jsonrpc.php"},
+		{"http://192.0.2.10/", "http://192.0.2.10/api_jsonrpc.php"},
+		{"https://198.51.100.20/gsm.php", "https://198.51.100.20/api_jsonrpc.php"},
+		{"https://198.51.100.20/index.php", "https://198.51.100.20/api_jsonrpc.php"},
 		{"http://example.com/zabbix/index.php", "http://example.com/zabbix/api_jsonrpc.php"},
 		{"http://example.com/zabbix", "http://example.com/zabbix/api_jsonrpc.php"},
 		{"http://example.com/zabbix/api_jsonrpc.php", "http://example.com/zabbix/api_jsonrpc.php"},

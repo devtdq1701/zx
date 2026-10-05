@@ -28,8 +28,8 @@ func TestLoadAndSaveConfig(t *testing.T) {
 				Token:     "test_token_123",
 				VerifySSL: true,
 			},
-			"hni": {
-				URL:       "http://10.144.1.1/zabbix",
+			"staging": {
+				URL:       "http://192.0.2.1/zabbix",
 				User:      "admin",
 				Password:  "secret_pass",
 				VerifySSL: false,

@@ -18,8 +18,13 @@ if [[ -z "${ZX_CLI:-}" ]]; then
         -ldflags="-s -w -X zx/internal/cli.Version=parity-$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
         -o "$ZX_CLI" ./cmd/zx)
 fi
-PROFILE="${PROFILE:-central}"
-TARGETS="${TARGETS:-10.165.67.61,10.165.67.62}"
+PROFILE="${1:-${PROFILE:-}}"
+TARGETS="${2:-${TARGETS:-}}"
+if [[ -z "$PROFILE" || -z "$TARGETS" ]]; then
+    echo "Usage: $0 <profile> <targets>" >&2
+    echo "Example: $0 production host1,host2" >&2
+    exit 1
+fi
 
 echo "=== ZABBIX-CLI PARITY TEST (Python vs Golang zx) ==="
 
