@@ -106,4 +106,5 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&timezoneFlag, "timezone", "Asia/Ho_Chi_Minh", "timezone for hour filters and absolute times")
 
 	rootCmd.AddCommand(preflightCmd)
+	rootCmd.AddCommand(importConfigCmd)
 }
