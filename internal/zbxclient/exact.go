@@ -118,6 +118,37 @@ func (c *Client) ResolveExactGroup(ctx context.Context, nameOrID string) (GroupR
 	return exactlyOne("hostgroup", nameOrID, exact, func(g GroupRecord) string { return g.Name + " (" + g.GroupID + ")" })
 }
 
+type UserGroupRecord struct {
+	UserGroupID string `json:"usrgrpid"`
+	Name        string `json:"name"`
+}
+
+// ResolveExactUserGroup resolves a user group by exact name or existing ID; a
+// digit-only value is checked as both.
+func (c *Client) ResolveExactUserGroup(ctx context.Context, nameOrID string) (UserGroupRecord, error) {
+	nameOrID = strings.TrimSpace(nameOrID)
+	lookups := []map[string]any{{"filter": map[string]string{"name": nameOrID}}}
+	if isNumericID(nameOrID) {
+		lookups = append(lookups, map[string]any{"usrgrpids": []string{nameOrID}})
+	}
+	var exact []UserGroupRecord
+	seen := map[string]bool{}
+	for _, params := range lookups {
+		params["output"] = []string{"usrgrpid", "name"}
+		var found []UserGroupRecord
+		if err := c.Call(ctx, "usergroup.get", params, &found); err != nil {
+			return UserGroupRecord{}, fmt.Errorf("usergroup.get: %w", err)
+		}
+		for _, g := range found {
+			if (g.UserGroupID == nameOrID || g.Name == nameOrID) && !seen[g.UserGroupID] {
+				seen[g.UserGroupID] = true
+				exact = append(exact, g)
+			}
+		}
+	}
+	return exactlyOne("usergroup", nameOrID, exact, func(g UserGroupRecord) string { return g.Name + " (" + g.UserGroupID + ")" })
+}
+
 type TemplateRecord struct {
 	TemplateID string `json:"templateid"`
 	Host       string `json:"host"`

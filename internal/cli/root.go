@@ -107,4 +107,5 @@ func init() {
 
 	rootCmd.AddCommand(preflightCmd)
 	rootCmd.AddCommand(importConfigCmd)
+	rootCmd.AddCommand(actionCmd)
 }
